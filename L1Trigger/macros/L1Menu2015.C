@@ -36,15 +36,16 @@
 	 
 	    linux>  root initL1Analysis.C      (loading libraries etc) 
 		 root>   .L L1Menu2015.C++          (compiles the script) 			  
-       root>   RunL1_HFW(Bool_t calcThreshold=true,Bool_t useL1Extra=true,Int_t usedL1Menu=0,Float_t targetlumi=200,Int_t whichFileAndLumiToUse=1,int which_jet_seed_to_use=0, Int_t pMenu2015 = 0, Int_t pNevts = -1)
+       root>   RunL1_HFW(Bool_t calcThreshold=false,Bool_t useL1Extra=true, Int_t pMenu2015 = 0, Int_t usedL1MenuThr=0,Int_t whichDataSetToUse=1,Int_ whichFileToUse=0, Float_t targetlumi=200, Int_t pNevts = -1)
  
        Definition of input quantities:
                   calcThreshold = flag for whether rate vs threshold plots are made (uses a lot more CPU)
 						useL1Extra    = flag for whether to use l1extra informaiton or quantities from GT
+						pMenu2015     = Selects different trigger menus (set in EvalMenu)
+						usedL1MenuThr = Selects the thresholds to be used for the algorithms (set in MyInit)
+						whichDataSetToUse = Specifies input data set                                                NOTE: This is ugly and should be improved.
+						whichFileToUse = Also a file specifier for selecting different versions of the same sample  NOTE:  ditto
 						targetlumi    = units of E32
-						whichFileAndLumiToUse = Specifies input file (set with Switch Statement)  NOTE: This is ugly and should be improved.
-						which_jet_seed_to_use = Also a file specifier for selecting different versions of the same sample  NOTE:  ditto
-						pMenu2015     = Selects different trigger thresholds to use for the full menu emulation
 						pNevts        = number of events to run over (-1 ==> run over all events in file)
 						
    There are a lot of details that are not yet summarized here....
@@ -66,15 +67,38 @@ TH2F *h2_SingleEG_CJet_byThreshold;
 TH1F *h_Mu_EG_byThreshold;
 TH1F *h_EG_Mu_byThreshold;
 TH2F *h2_Mu_EG_byThreshold;
+TH1F *h_Mu_Tau_byThreshold;
+TH1F *h_EG_Tau_byThreshold;
+TH2F *h2_Mu_Tau_byThreshold;
+TH2F *h2_EG_Tau_byThreshold;
+
 //Jets
 TH1F *h_SingleJet_byThreshold;
 TH1F *h_DoubleJet_byThreshold;
+TH2F *h2_DoubleJet_byThreshold;
 TH1F *h_QuadJetCentral_byThreshold;
+TH2F *h2A_QuadJetCentral_byThreshold;
+TH2F *h2B_QuadJetCentral_byThreshold;
+TH1F *h_SingleCJet_ETM_byThreshold;
+TH2F *h2_SingleCJet_ETM_byThreshold;
+TH1F *h_DoubleCJet_ETM_byThreshold;
+TH2F *h2_DoubleCJet_ETM_byThreshold;
+
+// Taus
 TH1F *h_SingleTau_byThreshold;
 TH1F *h_DoubleTau_byThreshold;
+TH2F *h2_DoubleTau_byThreshold;
+TH1F *h_SingleTau_ETM_byThreshold;
+TH2F *h2_SingleTau_ETM_byThreshold;
+TH1F *h_SingleTau_CJet_byThreshold;
+TH2F *h2_SingleTau_CJet_byThreshold;
+
 //Sums
 TH1F *h_HTT_byThreshold;
 TH1F *h_ETM_byThreshold;
+TH1F *h_HTT_ETM_byThreshold;
+TH2F *h2_HTT_ETM_byThreshold;
+
 //EGamma
 TH1F *h_SingleEG_byThreshold;
 TH1F *h_SingleIsoEG_byThreshold;
@@ -359,9 +383,15 @@ class L1Menu2015 : public L1Ntuple {
 	Bool_t EGEta2p1_DoubleJetCentral(Float_t EGcut, Float_t jetcut);	// delta
 	Bool_t EGEta2p1_DoubleJetCentral_TripleJetCentral(Float_t EGcut, Float_t jetcut2, Float_t jetcut3);   
 
+   Bool_t EG_Tau(Float_t EGcut, Float_t taucut, Float_t etaCut);
+	Bool_t Mu_Tau(Float_t Mucut, Float_t taucut, Float_t etaCut, Int_t minMuQual);
+	Bool_t Tau_JetCentral(Float_t taucut, Float_t jetcut, Float_t etaCut);
+	Bool_t Tau_ETM(Float_t taucut, Float_t ETMcut, Float_t etaCut);
+	
 	Bool_t HTT_HTM(Float_t HTTcut, Float_t HTMcut);
-	Bool_t JetCentral_ETM(Float_t jetcut, Float_t ETMcut);
-	Bool_t DoubleJetCentral_ETM(Float_t jetcut1, Float_t jetcut2, Float_t ETMcut);
+	Bool_t HTT_ETM(Float_t HTTcut, Float_t ETMcut);
+	Bool_t JetCentral_ETM(Float_t jetcut, Float_t ETMcut, Float_t etaCut);
+	Bool_t DoubleJetCentral_ETM(Float_t jetcut1, Float_t jetcut2, Float_t ETMcut, Float_t etaCut);
 	Bool_t DoubleMu_EG(Float_t mucut, Float_t EGcut );
 	Bool_t Mu_DoubleEG(Float_t mucut, Float_t EGcut);
 
@@ -566,7 +596,7 @@ void L1Menu2015::fillDataStructure(Bool_t useL1Extra) {
 	
 	
 // Get the muon information  (FOR NOW TAKE THIS FROM THE GMT TO BE CONSISTENT WITH BRISTOL)
-		 for(unsigned int i=0; i<gmt_->N; i++) {
+		 for(int i=0; i<gmt_->N; i++) {
 
       	 myEvt_.Bxmu.push_back(gmt_->CandBx[i]);
       	 myEvt_.Ptmu.push_back(gmt_->Pt[i]);
@@ -702,6 +732,8 @@ void L1Menu2015::MyInit() {
 	
 	BitMapping["L1_EG_Mu"] =  60;
 	BitMapping["L1_Mu_EG"] =  61;
+	BitMapping["L1_EG_Tau"]=  62;
+	BitMapping["L1_Mu_Tau"]=  63;
 
 	BitMapping["L1_SingleTau"] = 30 ;
 	BitMapping["L1_DoubleTau"] = 31 ;
@@ -710,15 +742,18 @@ void L1Menu2015::MyInit() {
 	BitMapping["L1_DoubleJet"] = 41 ;
 	BitMapping["L1_QuadJetC"] =   42;
 	
-	BitMapping["L1_ETM"] =  50 ;
-	
+	BitMapping["L1_ETM"] =  50 ;	
 	BitMapping["L1_HTT"] =  51 ;
+	BitMapping["L1_HTT_ETM"]=52;
 
-	BitMapping["L1_SingleMu_ETM"] =  70 ;
-	BitMapping["L1_SingleEG_ETM"] =  71 ;
+	BitMapping["L1_SingleMu_ETM"]  = 70 ;
+	BitMapping["L1_SingleEG_ETM"]  = 71 ;
 	BitMapping["L1_SingleMu_CJet"] = 72 ;
 	BitMapping["L1_SingleEG_CJet"] = 73 ;
-	
+	BitMapping["L1_SingleTau_CJet"]= 74 ;
+	BitMapping["L1_SingleTau_ETM"] = 75 ;
+	BitMapping["L1_SingleCJet_ETM"]= 76 ;
+	BitMapping["L1_DoubleCJet_ETM"]= 77 ;
 
 //  DEFINE THE DEFAULT PARAMETERS (Can Override below)
 
@@ -776,14 +811,14 @@ void L1Menu2015::MyInit() {
 	trigParList["L1_SingleMu_ETM"].secTh    = 20.;
 	trigParList["L1_SingleMu_ETM"].triTh    = -1.;
 	trigParList["L1_SingleMu_ETM"].quadTh   = -1.;
-	trigParList["L1_SingleMu_ETM"].etaCut   =  5.0;
+	trigParList["L1_SingleMu_ETM"].etaCut   =  2.1;
 	trigParList["L1_SingleMu_ETM"].minQual  =  5;	  
 
 	trigParList["L1_SingleMu_CJet"].primTh   = 20.;
 	trigParList["L1_SingleMu_CJet"].secTh    = 32.;
 	trigParList["L1_SingleMu_CJet"].triTh    = -1.;
 	trigParList["L1_SingleMu_CJet"].quadTh   = -1.;
-	trigParList["L1_SingleMu_CJet"].etaCut   =  5.0;
+	trigParList["L1_SingleMu_CJet"].etaCut   =  2.1;
 	trigParList["L1_SingleMu_CJet"].minQual  =  5;	
 
 	trigParList["L1_EG_Mu"].primTh   = 3.5; //First threshold is on muon
@@ -800,6 +835,20 @@ void L1Menu2015::MyInit() {
 	trigParList["L1_Mu_EG"].etaCut   =  5.0;
 	trigParList["L1_Mu_EG"].minQual  =  5;
 
+	trigParList["L1_EG_Tau"].primTh   = 22.; //First threshold is on EG
+	trigParList["L1_EG_Tau"].secTh    = 20.; //Second threshol is on Tau
+	trigParList["L1_EG_Tau"].triTh    = -1.;
+	trigParList["L1_EG_Tau"].quadTh   = -1.;
+	trigParList["L1_EG_Tau"].etaCut   = -1.; //No meaning currently
+	trigParList["L1_EG_Tau"].minQual  = -1.;
+
+	trigParList["L1_Mu_Tau"].primTh   = 17.; //First threshold is on muon
+	trigParList["L1_Mu_Tau"].secTh    = 20.; //Second threshol is on Tau
+	trigParList["L1_Mu_Tau"].triTh    = -1.;
+	trigParList["L1_Mu_Tau"].quadTh   = -1.;
+	trigParList["L1_Mu_Tau"].etaCut   =  2.1;
+	trigParList["L1_Mu_Tau"].minQual  =  5;
+
 	trigParList["L1_SingleTau"].primTh   = 30.;
 	trigParList["L1_SingleTau"].secTh    = -1.;
 	trigParList["L1_SingleTau"].triTh    = -1.;
@@ -813,6 +862,20 @@ void L1Menu2015::MyInit() {
 	trigParList["L1_DoubleTau"].quadTh   = -1.;
 	trigParList["L1_DoubleTau"].etaCut   =  4.5; //corresponds to eta<2.17 
 	trigParList["L1_DoubleTau"].minQual  = -1.;
+
+	trigParList["L1_SingleTau_ETM"].primTh   = 40.;
+	trigParList["L1_SingleTau_ETM"].secTh    = 20.;
+	trigParList["L1_SingleTau_ETM"].triTh    = -1.;
+	trigParList["L1_SingleTau_ETM"].quadTh   = -1.;
+	trigParList["L1_SingleTau_ETM"].etaCut   = 4.5;
+	trigParList["L1_SingleTau_ETM"].minQual  = -1.;	  
+
+	trigParList["L1_SingleTau_CJet"].primTh   = 40.;
+	trigParList["L1_SingleTau_CJet"].secTh    = 32.;
+	trigParList["L1_SingleTau_CJet"].triTh    = -1.;
+	trigParList["L1_SingleTau_CJet"].quadTh   = -1.;
+	trigParList["L1_SingleTau_CJet"].etaCut   = 4.5;
+	trigParList["L1_SingleTau_CJet"].minQual  = -1.;	  	
 
 	trigParList["L1_SingleJet"].primTh   = 128.;
 	trigParList["L1_SingleJet"].secTh    = -1.;
@@ -843,12 +906,34 @@ void L1Menu2015::MyInit() {
 	trigParList["L1_ETM"].etaCut   = -1.;
 	trigParList["L1_ETM"].minQual  = -1.;	
 
+	trigParList["L1_SingleCJet_ETM"].primTh   = 60.;
+	trigParList["L1_SingleCJet_ETM"].secTh    = 20.;
+	trigParList["L1_SingleCJet_ETM"].triTh    = -1.;
+	trigParList["L1_SingleCJet_ETM"].quadTh   = -1.;
+	trigParList["L1_SingleCJet_ETM"].etaCut   = 4.5; //corresponds to eta<2.17
+	trigParList["L1_SingleCJet_ETM"].minQual  = -1.;	
+
+	trigParList["L1_DoubleCJet_ETM"].primTh   = 36.;
+	trigParList["L1_DoubleCJet_ETM"].secTh    = 36.;
+	trigParList["L1_DoubleCJet_ETM"].triTh    = 30.;
+	trigParList["L1_DoubleCJet_ETM"].quadTh   = -1.;
+	trigParList["L1_DoubleCJet_ETM"].etaCut   = 4.5; //corresponds to eta<2.17
+	trigParList["L1_DoubleCJet_ETM"].minQual  = -1.;	
+
 	trigParList["L1_HTT"].primTh   =150.;
 	trigParList["L1_HTT"].secTh    = -1.;
 	trigParList["L1_HTT"].triTh    = -1.;
 	trigParList["L1_HTT"].quadTh   = -1.;
 	trigParList["L1_HTT"].etaCut   = -1.;
 	trigParList["L1_HTT"].minQual  = -1.;
+
+	trigParList["L1_HTT_ETM"].primTh   = 75.;
+	trigParList["L1_HTT_ETM"].secTh    = 50.;
+	trigParList["L1_HTT_ETM"].triTh    = -1.;
+	trigParList["L1_HTT_ETM"].quadTh   = -1.;
+	trigParList["L1_HTT_ETM"].etaCut   = -1.;
+	trigParList["L1_HTT_ETM"].minQual  = -1.;
+
 
 
 // Set Prescales
@@ -863,6 +948,8 @@ void L1Menu2015::MyInit() {
 
 	Prescales["L1_EG_Mu"] =  1;
 	Prescales["L1_Mu_EG"] =  1;
+	Prescales["L1_EG_Tau"] =  1;
+	Prescales["L1_Mu_Tau"] =  1;
 
 	Prescales["L1_SingleTau"] = 1 ;
 	Prescales["L1_DoubleTau"] = 1 ;
@@ -872,13 +959,18 @@ void L1Menu2015::MyInit() {
 	Prescales["L1_QuadJetC"] =   1;
 
 	Prescales["L1_ETM"] =  1 ;
-
 	Prescales["L1_HTT"] =  1 ;
+	Prescales["L1_HTT_ETM"] =  1 ;
 
-	Prescales["L1_SingleMu_ETM"] =  1 ;
-	Prescales["L1_SingleEG_ETM"] =  1 ;
-	Prescales["L1_SingleMu_CJet"] = 1 ;
-	Prescales["L1_SingleEG_CJet"] = 1 ;
+	Prescales["L1_SingleMu_ETM"]   = 1 ;
+	Prescales["L1_SingleEG_ETM"]   = 1 ;
+	Prescales["L1_SingleTau_ETM"]  = 1 ;
+	Prescales["L1_SingleMu_CJet"]  = 1 ;
+	Prescales["L1_SingleEG_CJet"]  = 1 ;
+	Prescales["L1_SingleTau_CJet"] = 1 ;
+	Prescales["L1_SingleCJet_ETM"]       = 1 ;
+	Prescales["L1_DoubleCJet_ETM"] = 1 ;
+
 
 	if (theL1Menu == 1) {  //Override default choices
 
@@ -1444,8 +1536,7 @@ Bool_t L1Menu2015::DoubleMu(Float_t cut1, Float_t cut2, Int_t qualmin) {
 		if (bx != 0) continue;
 		Float_t pt = myEvt_.Ptmu.at(imu);			
 		Int_t qual = myEvt_.Qualmu.at(imu);        
-	        if ( qual < qualmin) continue;
-		if (qual < 4  && qual != 3 ) continue;
+	   if ( qual < qualmin) continue;
 		if (pt >= cut1) n1 ++;
 		if (pt >= cut2) n2 ++;
 	}
@@ -1506,7 +1597,7 @@ Bool_t L1Menu2015::EvalMenu(double lumiWeight) {
 
 	insert_ibin = 0;
 	
-	if(Menu2015==0) {  //Menu v1
+	if(Menu2015==0) {  //Menu v1  Basic single and dilepton cases with a few simple hadronic triggers
 	
 
 	   InsertInMenu("L1_SingleEG",      SingleEG_Eta(trigParList["L1_SingleEG"].primTh,trigParList["L1_SingleEG"].etaCut) );
@@ -1590,6 +1681,46 @@ Bool_t L1Menu2015::EvalMenu(double lumiWeight) {
 //	   InsertInMenu("L1_ETM",           ETM(trigParList["L1_ETM"].primTh) );           
 //	   InsertInMenu("L1_HTT",           HTT(trigParList["L1_HTT"].primTh) );
 
+	} else if(Menu2015==10){  //Menu expanded cross triggers
+
+
+	   InsertInMenu("L1_SingleEG",      SingleEG_Eta(trigParList["L1_SingleEG"].primTh,trigParList["L1_SingleEG"].etaCut) );
+	   InsertInMenu("L1_SingleIsoEG",   SingleIsoEG_Eta(trigParList["L1_SingleIsoEG"].primTh,trigParList["L1_SingleIsoEG"].etaCut) );
+	   InsertInMenu("L1_DoubleEG",      DoubleEG(trigParList["L1_DoubleEG"].primTh,trigParList["L1_DoubleEG"].secTh) );
+	   InsertInMenu("L1_SingleEG_ETM",  EG_ETM(trigParList["L1_SingleEG_ETM"].primTh,trigParList["L1_SingleEG_ETM"].secTh) );
+	   InsertInMenu("L1_SingleEG_CJet", EG_JetCentral(trigParList["L1_SingleEG_CJet"].primTh,trigParList["L1_SingleEG_CJet"].secTh) );	   
+
+
+	   InsertInMenu("L1_SingleMu",      SingleMuEta(trigParList["L1_SingleMu"].primTh,trigParList["L1_SingleMu"].etaCut,trigParList["L1_SingleMu"].minQual));
+	   InsertInMenu("L1_DoubleMu",      DoubleMu(trigParList["L1_DoubleMu"].primTh,trigParList["L1_DoubleMu"].secTh,trigParList["L1_DoubleMu"].minQual));
+	   InsertInMenu("L1_SingleMu_ETM",  Muer_ETM(trigParList["L1_SingleMu_ETM"].primTh,trigParList["L1_SingleMu_ETM"].secTh,trigParList["L1_SingleMu_ETM"].etaCut, trigParList["L1_SingleMu_ETM"].minQual) );
+	   InsertInMenu("L1_SingleMu_CJet", Muer_JetCentral(trigParList["L1_SingleMu_CJet"].primTh,trigParList["L1_SingleMu_CJet"].secTh,trigParList["L1_SingleMu_CJet"].etaCut, trigParList["L1_SingleMu_CJet"].minQual) );
+
+	   
+	   InsertInMenu("L1_EG_Mu",         Mu_EG(trigParList["L1_EG_Mu"].primTh,trigParList["L1_EG_Mu"].secTh, trigParList["L1_EG_Mu"].minQual ) );
+	   InsertInMenu("L1_Mu_EG",         Mu_EG(trigParList["L1_Mu_EG"].primTh,trigParList["L1_Mu_EG"].secTh, trigParList["L1_Mu_EG"].minQual) );
+	   InsertInMenu("L1_EG_Tau",        EG_Tau(trigParList["L1_EG_Tau"].primTh,trigParList["L1_EG_Tau"].secTh, trigParList["L1_EG_Tau"].etaCut ) );
+	   InsertInMenu("L1_Mu_Tau",        Mu_Tau(trigParList["L1_Mu_Tau"].primTh,trigParList["L1_Mu_Tau"].secTh, trigParList["L1_Mu_Tau"].etaCut, trigParList["L1_Mu_Tau"].minQual) );
+
+	   
+	   InsertInMenu("L1_SingleJet",     SingleJet(trigParList["L1_SingleJet"].primTh) );
+      InsertInMenu("L1_DoubleJet",     DoubleJetCentral(trigParList["L1_DoubleJet"].primTh,trigParList["L1_DoubleJet"].secTh) );
+	   InsertInMenu("L1_QuadJetC",      QuadJetCentral(trigParList["L1_QuadJetC"].primTh,trigParList["L1_QuadJetC"].secTh,trigParList["L1_QuadJetC"].triTh,trigParList["L1_QuadJetC"].quadTh) );
+
+//	   InsertInMenu("L1_SingleTau",     SingleTauJet(trigParList["L1_SingleTau"].primTh) );	   	   
+	   InsertInMenu("L1_DoubleTau",     DoubleTauJetEta(trigParList["L1_DoubleTau"].primTh,trigParList["L1_DoubleTau"].secTh,trigParList["L1_DoubleTau"].etaCut) );
+	   InsertInMenu("L1_SingleTau_ETM", Tau_ETM(trigParList["L1_SingleTau_ETM"].primTh, trigParList["L1_SingleTau_ETM"].secTh, trigParList["L1_SingleTau_ETM"].etaCut) );
+	   InsertInMenu("L1_SingleTau_CJet",Tau_JetCentral(trigParList["L1_SingleTau_CJet"].primTh, trigParList["L1_SingleTau_CJet"].secTh, trigParList["L1_SingleTau_CJet"].etaCut) );
+
+
+	   InsertInMenu("L1_ETM",           ETM(trigParList["L1_ETM"].primTh) );           
+	   InsertInMenu("L1_HTT",           HTT(trigParList["L1_HTT"].primTh) );
+
+	   InsertInMenu("L1_SingleCJet_ETM",JetCentral_ETM(trigParList["L1_SingleCJet_ETM"].primTh, trigParList["L1_SingleCJet_ETM"].secTh, trigParList["L1_SingleCJet_ETM"].etaCut) ); 
+	   InsertInMenu("L1_DoubleCJet_ETM",DoubleJetCentral_ETM(trigParList["L1_DoubleCJet_ETM"].primTh, trigParList["L1_DoubleCJet_ETM"].secTh, trigParList["L1_DoubleCJet_ETM"].triTh, trigParList["L1_DoubleCJet_ETM"].etaCut) ); 
+
+	   InsertInMenu("L1_HTT_ETM",       HTT_ETM(trigParList["L1_HTT_ETM"].primTh, trigParList["L1_HTT_ETM"].secTh) );
+
    } else {
 	
 	   printf("No Menu2015 defined\n");
@@ -1633,7 +1764,7 @@ Bool_t L1Menu2015::EvalMenu(double lumiWeight) {
 
 void L1Menu2015::EvalThresh(double lumiWeight) {
  
-// Flag for whether do evaluate 2-D trigger space (This can be CPU intensive) 
+// Flag for whether to evaluate 2-D trigger space (This can be CPU intensive) 
    bool TwoDimScan = true;  
 
 /* notes:
@@ -1656,7 +1787,7 @@ void L1Menu2015::EvalThresh(double lumiWeight) {
 	//------- SingleMu -----------------------------------------------------------------------------------------------------
 	const unsigned n_bins_SingleMu = h_SingleMu_byThreshold->GetNbinsX();
 	for(unsigned bin=1; bin <= n_bins_SingleMu+1; bin++){
-		const float bin_low_edge = h_SingleMu_byThreshold->GetBinLowEdge(bin);
+//		const float bin_low_edge = h_SingleMu_byThreshold->GetBinLowEdge(bin);
 		const float bin_center = h_SingleMu_byThreshold->GetBinCenter(bin);
 		if(SingleMuEta(bin_center,trigParList["L1_SingleMu"].etaCut,trigParList["L1_SingleMu"].minQual)){
 			h_SingleMu_byThreshold->Fill(bin_center,lumiWeight);
@@ -1667,23 +1798,23 @@ void L1Menu2015::EvalThresh(double lumiWeight) {
 	//------ DoubleMu ------------------------------------------------------------------------------------------------------
 	const unsigned n_bins_DoubleMu = h_DoubleMu_byThreshold->GetNbinsX();
 	for(unsigned bin=1; bin <= n_bins_DoubleMu+1; bin++){
-		const float bin_low_edge = h_DoubleMu_byThreshold->GetBinLowEdge(bin);
+//		const float bin_low_edge = h_DoubleMu_byThreshold->GetBinLowEdge(bin);
 		const float bin_center = h_DoubleMu_byThreshold->GetBinCenter(bin);
-		if(DoubleMu(bin_center,bin_center*(trigParList["L1_DoubleMu"].secTh/trigParList["L1_DoubleMu"].primTh,trigParList["L1_DoubleMu"].minQual) )){
+		if(DoubleMu(bin_center,bin_center*(trigParList["L1_DoubleMu"].secTh/trigParList["L1_DoubleMu"].primTh),trigParList["L1_DoubleMu"].minQual )){
 			h_DoubleMu_byThreshold->Fill(bin_center,lumiWeight);
 		}
 	}
 	//----------------------------------------------------------------------------------------------------------------------
 
-	//------ DoubleMu ---- 2-D Evaluation ------------------------------------------------------------------------------
+	//------ DoubleMu ---- 2-D Evaluation --Only fill half of space because symmetric (if id cuts identical) --------------
 	if(TwoDimScan) {
 	  const unsigned n_bins_DoubleMu_X = h2_DoubleMu_byThreshold->GetNbinsX();
-	  const unsigned n_bins_DoubleMu_Y = h2_DoubleMu_byThreshold->GetNbinsY();
+//	  const unsigned n_bins_DoubleMu_Y = h2_DoubleMu_byThreshold->GetNbinsY();
 	  for(unsigned bin=1; bin <= n_bins_DoubleMu_X+1; bin++){	
-	     const float bin_low_edge_X = h2_DoubleMu_byThreshold->GetXaxis()->GetBinLowEdge(bin);	
+//	     const float bin_low_edge_X = h2_DoubleMu_byThreshold->GetXaxis()->GetBinLowEdge(bin);	
 		  const float bin_center_X = h2_DoubleMu_byThreshold->GetXaxis()->GetBinCenter(bin);
 		  for(unsigned ybin=1; ybin <= bin; ybin++){	  //stop the y-axis scan at the diagonal since this is symmetric
-		     const float bin_low_edge_Y = h2_DoubleMu_byThreshold->GetYaxis()->GetBinLowEdge(ybin);	
+//		     const float bin_low_edge_Y = h2_DoubleMu_byThreshold->GetYaxis()->GetBinLowEdge(ybin);	
 		     const float bin_center_Y = h2_DoubleMu_byThreshold->GetYaxis()->GetBinCenter(ybin);
 		     if(DoubleMu(bin_center_X, bin_center_Y,trigParList["L1_DoubleMu"].minQual)){
 			     h2_DoubleMu_byThreshold->Fill(bin_center_X,bin_center_Y,lumiWeight);
@@ -1698,7 +1829,7 @@ void L1Menu2015::EvalThresh(double lumiWeight) {
 	//------- SingleMu_ETM -----------------------------------------------------------------------------------------------------
 	const unsigned n_bins_SingleMu_ETM = h_SingleMu_ETM_byThreshold->GetNbinsX();
 	for(unsigned bin=1; bin <= n_bins_SingleMu_ETM+1; bin++){
-		const float bin_low_edge = h_SingleMu_ETM_byThreshold->GetBinLowEdge(bin);
+//		const float bin_low_edge = h_SingleMu_ETM_byThreshold->GetBinLowEdge(bin);
 		const float bin_center = h_SingleMu_ETM_byThreshold->GetBinCenter(bin);
 		if(Muer_ETM(bin_center,bin_center*(trigParList["L1_SingleMu_ETM"].secTh/trigParList["L1_SingleMu_ETM"].primTh),trigParList["L1_SingleMu_ETM"].etaCut,trigParList["L1_SingleMu_ETM"].minQual)){
 			h_SingleMu_ETM_byThreshold->Fill(bin_center,lumiWeight);
@@ -1711,10 +1842,10 @@ void L1Menu2015::EvalThresh(double lumiWeight) {
 		const unsigned n_bins_SingleMu_ETM_X = h2_SingleMu_ETM_byThreshold->GetNbinsX();
 		const unsigned n_bins_SingleMu_ETM_Y = h2_SingleMu_ETM_byThreshold->GetNbinsY();
 		for(unsigned bin=1; bin <= n_bins_SingleMu_ETM_X+1; bin++){	
-	   	const float bin_low_edge_X = h2_SingleMu_ETM_byThreshold->GetXaxis()->GetBinLowEdge(bin);	
+//	   	const float bin_low_edge_X = h2_SingleMu_ETM_byThreshold->GetXaxis()->GetBinLowEdge(bin);	
 			const float bin_center_X = h2_SingleMu_ETM_byThreshold->GetXaxis()->GetBinCenter(bin);
 			for(unsigned ybin=1; ybin <= n_bins_SingleMu_ETM_Y+1; ybin++){	
-		   	const float bin_low_edge_Y = h2_SingleMu_ETM_byThreshold->GetYaxis()->GetBinLowEdge(ybin);	
+//		   	const float bin_low_edge_Y = h2_SingleMu_ETM_byThreshold->GetYaxis()->GetBinLowEdge(ybin);	
 		   	const float bin_center_Y = h2_SingleMu_ETM_byThreshold->GetYaxis()->GetBinCenter(ybin);
 		   	if(Muer_ETM(bin_center_X, bin_center_Y,trigParList["L1_SingleMu_ETM"].etaCut,trigParList["L1_SingleMu_ETM"].minQual)){
 			   	h2_SingleMu_ETM_byThreshold->Fill(bin_center_X,bin_center_Y,lumiWeight);
@@ -1728,7 +1859,7 @@ void L1Menu2015::EvalThresh(double lumiWeight) {
 	//------- SingleMu_CJet -----------------------------------------------------------------------------------------------------
 	const unsigned n_bins_SingleMu_CJet = h_SingleMu_CJet_byThreshold->GetNbinsX();
 	for(unsigned bin=1; bin <= n_bins_SingleMu_CJet+1; bin++){
-		const float bin_low_edge = h_SingleMu_CJet_byThreshold->GetBinLowEdge(bin);
+//		const float bin_low_edge = h_SingleMu_CJet_byThreshold->GetBinLowEdge(bin);
 		const float bin_center = h_SingleMu_CJet_byThreshold->GetBinCenter(bin);
 		if(Muer_JetCentral(bin_center,bin_center*(trigParList["L1_SingleMu_CJet"].secTh/trigParList["L1_SingleMu_CJet"].primTh),trigParList["L1_SingleMu_CJet"].etaCut,trigParList["L1_SingleMu_CJet"].minQual)){
 			h_SingleMu_CJet_byThreshold->Fill(bin_center,lumiWeight);
@@ -1741,10 +1872,10 @@ void L1Menu2015::EvalThresh(double lumiWeight) {
 		const unsigned n_bins_SingleMu_CJet_X = h2_SingleMu_CJet_byThreshold->GetNbinsX();
 		const unsigned n_bins_SingleMu_CJet_Y = h2_SingleMu_CJet_byThreshold->GetNbinsY();
 		for(unsigned bin=1; bin <= n_bins_SingleMu_CJet_X+1; bin++){	
-	   	const float bin_low_edge_X = h2_SingleMu_CJet_byThreshold->GetXaxis()->GetBinLowEdge(bin);	
+//	   	const float bin_low_edge_X = h2_SingleMu_CJet_byThreshold->GetXaxis()->GetBinLowEdge(bin);	
 			const float bin_center_X = h2_SingleMu_CJet_byThreshold->GetXaxis()->GetBinCenter(bin);
 			for(unsigned ybin=1; ybin <= n_bins_SingleMu_CJet_Y+1; ybin++){	
-		   	const float bin_low_edge_Y = h2_SingleMu_CJet_byThreshold->GetYaxis()->GetBinLowEdge(ybin);	
+//		   	const float bin_low_edge_Y = h2_SingleMu_CJet_byThreshold->GetYaxis()->GetBinLowEdge(ybin);	
 		   	const float bin_center_Y = h2_SingleMu_CJet_byThreshold->GetYaxis()->GetBinCenter(ybin);
 		   	if(Muer_JetCentral(bin_center_X, bin_center_Y,trigParList["L1_SingleMu_CJet"].etaCut,trigParList["L1_SingleMu_CJet"].minQual)){
 			   	h2_SingleMu_CJet_byThreshold->Fill(bin_center_X,bin_center_Y,lumiWeight);
@@ -1788,10 +1919,10 @@ void L1Menu2015::EvalThresh(double lumiWeight) {
 	}
 	//----------------------------------------------------------------------------------------------------------------------
 
-	//------ DoubleEG ---- 2-D Evaluation ------------------------------------------------------------------------------
+	//------ DoubleEG ---- 2-D Evaluation ----(Fill only bottom half since symmetric (if ID cuts same) -------------------
 	if(TwoDimScan) {
 		const unsigned n_bins_DoubleEG_X = h2_DoubleEG_byThreshold->GetNbinsX();
-		const unsigned n_bins_DoubleEG_Y = h2_DoubleEG_byThreshold->GetNbinsY();
+//		const unsigned n_bins_DoubleEG_Y = h2_DoubleEG_byThreshold->GetNbinsY();
 		for(unsigned bin=1; bin <= n_bins_DoubleEG_X+1; bin++){	
 	   	const float bin_low_edge_X = h2_DoubleEG_byThreshold->GetXaxis()->GetBinLowEdge(bin);	
 			const float bin_center_X = h2_DoubleEG_byThreshold->GetXaxis()->GetBinCenter(bin);
@@ -1872,7 +2003,7 @@ void L1Menu2015::EvalThresh(double lumiWeight) {
 	//-------- Mu_EG -------------------------------------------------------------------------------------------------------
 	const unsigned n_bins_Mu_EG = h_Mu_EG_byThreshold->GetNbinsX();
 	for(unsigned bin=1; bin <= n_bins_Mu_EG+1; bin++){
-		const float bin_low_edge = h_Mu_EG_byThreshold->GetBinLowEdge(bin);
+//		const float bin_low_edge = h_Mu_EG_byThreshold->GetBinLowEdge(bin);
 		const float bin_center = h_Mu_EG_byThreshold->GetBinCenter(bin);
 		if(Mu_EG(bin_center, bin_center*(trigParList["L1_Mu_EG"].secTh/trigParList["L1_Mu_EG"].primTh), trigParList["L1_Mu_EG"].minQual)){
 			h_Mu_EG_byThreshold->Fill(bin_center,lumiWeight);
@@ -1894,7 +2025,7 @@ void L1Menu2015::EvalThresh(double lumiWeight) {
 		const unsigned n_bins_Mu_EG_X = h2_Mu_EG_byThreshold->GetNbinsX();
 		const unsigned n_bins_Mu_EG_Y = h2_Mu_EG_byThreshold->GetNbinsY();
 		for(unsigned bin=1; bin <= n_bins_Mu_EG_X+1; bin++){	
-	   	const float bin_low_edge_X = h2_Mu_EG_byThreshold->GetXaxis()->GetBinLowEdge(bin);	
+//	   	const float bin_low_edge_X = h2_Mu_EG_byThreshold->GetXaxis()->GetBinLowEdge(bin);	
 			const float bin_center_X = h2_Mu_EG_byThreshold->GetXaxis()->GetBinCenter(bin);
 			for(unsigned ybin=1; ybin <= n_bins_Mu_EG_Y+1; ybin++){	
 		   	const float bin_low_edge_Y = h2_Mu_EG_byThreshold->GetYaxis()->GetBinLowEdge(ybin);	
@@ -1907,6 +2038,63 @@ void L1Menu2015::EvalThresh(double lumiWeight) {
    }
 	//----------------------------------------------------------------------------------------------------------------------
 
+
+	//-------- Mu_Tau -------------------------------------------------------------------------------------------------------
+	const unsigned n_bins_Mu_Tau = h_Mu_Tau_byThreshold->GetNbinsX();
+	for(unsigned bin=1; bin <= n_bins_Mu_Tau+1; bin++){
+//		const float bin_low_edge = h_Mu_Tau_byThreshold->GetBinLowEdge(bin);
+		const float bin_center = h_Mu_Tau_byThreshold->GetBinCenter(bin);
+		if(Mu_Tau(bin_center, bin_center*(trigParList["L1_Mu_Tau"].secTh/trigParList["L1_Mu_Tau"].primTh), trigParList["L1_Mu_Tau"].etaCut, trigParList["L1_Mu_Tau"].minQual)){
+			h_Mu_Tau_byThreshold->Fill(bin_center,lumiWeight);
+		}
+	}
+	
+	//------ Mu_Tau ---- 2-D Evaluation ------------------------------------------------------------------------------
+	if(TwoDimScan) {	
+		const unsigned n_bins_Mu_Tau_X = h2_Mu_Tau_byThreshold->GetNbinsX();
+		const unsigned n_bins_Mu_Tau_Y = h2_Mu_Tau_byThreshold->GetNbinsY();
+		for(unsigned bin=1; bin <= n_bins_Mu_Tau_X+1; bin++){	
+//	   	const float bin_low_edge_X = h2_Mu_Tau_byThreshold->GetXaxis()->GetBinLowEdge(bin);	
+			const float bin_center_X = h2_Mu_Tau_byThreshold->GetXaxis()->GetBinCenter(bin);
+			for(unsigned ybin=1; ybin <= n_bins_Mu_Tau_Y+1; ybin++){	
+		   	const float bin_low_edge_Y = h2_Mu_Tau_byThreshold->GetYaxis()->GetBinLowEdge(ybin);	
+		   	const float bin_center_Y = h2_Mu_Tau_byThreshold->GetYaxis()->GetBinCenter(ybin);
+		   	if(Mu_Tau(bin_center_X, bin_low_edge_Y, trigParList["L1_Mu_Tau"].etaCut, trigParList["L1_Mu_Tau"].minQual)){
+			   	h2_Mu_Tau_byThreshold->Fill(bin_center_X,bin_center_Y,lumiWeight);
+		   	}
+			}	
+		}
+   }
+	//----------------------------------------------------------------------------------------------------------------------	
+	
+	//------- EG_Tau --------------------------------------------------------------------------------------------------------
+	const unsigned n_bins_EG_Tau = h_EG_Tau_byThreshold->GetNbinsX();
+	for(unsigned bin=1; bin <= n_bins_EG_Tau+1; bin++){
+		const float bin_low_edge = h_EG_Tau_byThreshold->GetBinLowEdge(bin);
+		const float bin_center = h_EG_Tau_byThreshold->GetBinCenter(bin);
+		if(EG_Tau(bin_low_edge, bin_center*(trigParList["L1_EG_Tau"].secTh/trigParList["L1_EG_Tau"].primTh),  trigParList["L1_EG_Tau"].etaCut) ){
+			h_EG_Tau_byThreshold->Fill(bin_center,lumiWeight);
+		}
+	}	
+	//----------------------------------------------------------------------------------------------------------------------
+
+	//------ EG_Tau ---- 2-D Evaluation ------------------------------------------------------------------------------
+	if(TwoDimScan) {	
+		const unsigned n_bins_EG_Tau_X = h2_EG_Tau_byThreshold->GetNbinsX();
+		const unsigned n_bins_EG_Tau_Y = h2_EG_Tau_byThreshold->GetNbinsY();
+		for(unsigned bin=1; bin <= n_bins_EG_Tau_X+1; bin++){	
+	   	const float bin_low_edge_X = h2_EG_Tau_byThreshold->GetXaxis()->GetBinLowEdge(bin);	
+			const float bin_center_X = h2_EG_Tau_byThreshold->GetXaxis()->GetBinCenter(bin);
+			for(unsigned ybin=1; ybin <= n_bins_EG_Tau_Y+1; ybin++){	
+		   	const float bin_low_edge_Y = h2_EG_Tau_byThreshold->GetYaxis()->GetBinLowEdge(ybin);	
+		   	const float bin_center_Y = h2_EG_Tau_byThreshold->GetYaxis()->GetBinCenter(ybin);
+		   	if(EG_Tau(bin_low_edge_X, bin_low_edge_Y, trigParList["L1_EG_Tau"].etaCut)){
+			   	h2_EG_Tau_byThreshold->Fill(bin_center_X,bin_center_Y,lumiWeight);
+		   	}
+			}	
+		}
+   }
+	//----------------------------------------------------------------------------------------------------------------------
 
 
 	//------ SingleJet -----------------------------------------------------------------------------------------------------
@@ -1931,6 +2119,26 @@ void L1Menu2015::EvalThresh(double lumiWeight) {
 	}
 	//----------------------------------------------------------------------------------------------------------------------
 	
+
+	//------ DoubleJet ---- 2-D Evaluation ------------------------------------------------------------------------------
+	if(TwoDimScan) {	
+		const unsigned n_bins_DoubleJet_X = h2_DoubleJet_byThreshold->GetNbinsX();
+//		const unsigned n_bins_DoubleJet_Y = h2_DoubleJet_byThreshold->GetNbinsY();
+		for(unsigned bin=1; bin <= n_bins_DoubleJet_X+1; bin++){	
+	   	const float bin_low_edge_X = h2_DoubleJet_byThreshold->GetXaxis()->GetBinLowEdge(bin);	
+			const float bin_center_X = h2_DoubleJet_byThreshold->GetXaxis()->GetBinCenter(bin);
+			for(unsigned ybin=1; ybin <= bin ; ybin++){  //only compute the rate below the diagonal because symmetric	
+		   	const float bin_low_edge_Y = h2_DoubleJet_byThreshold->GetYaxis()->GetBinLowEdge(ybin);	
+		   	const float bin_center_Y = h2_DoubleJet_byThreshold->GetYaxis()->GetBinCenter(ybin);
+		   	if(DoubleJetCentral(bin_low_edge_X, bin_low_edge_Y)){
+			   	h2_DoubleJet_byThreshold->Fill(bin_center_X,bin_center_Y,lumiWeight);
+		   	}
+			}	
+		}
+   }
+	//----------------------------------------------------------------------------------------------------------------------
+
+
 	
 	//------- QuadJet ------------------------------------------------------------------------------------------------------
 	const unsigned n_bins_QuadJetCentral = h_QuadJetCentral_byThreshold->GetNbinsX();
@@ -1941,6 +2149,44 @@ void L1Menu2015::EvalThresh(double lumiWeight) {
 			h_QuadJetCentral_byThreshold->Fill(bin_center,lumiWeight);
 		}
 	}
+	//----------------------------------------------------------------------------------------------------------------------
+
+
+	//------ QuadJet ---- 2-D Evaluation (A)------------------------------------------------------------------------------
+	if(TwoDimScan) {	
+		const unsigned n_bins_QuadJetCentral_X = h2A_QuadJetCentral_byThreshold->GetNbinsX();
+//		const unsigned n_bins_QuadJetCentral_Y = h2A_QuadJetCentral_byThreshold->GetNbinsY();
+		for(unsigned bin=1; bin <= n_bins_QuadJetCentral_X+1; bin++){	
+	   	const float bin_low_edge_X = h2A_QuadJetCentral_byThreshold->GetXaxis()->GetBinLowEdge(bin);	
+			const float bin_center_X = h2A_QuadJetCentral_byThreshold->GetXaxis()->GetBinCenter(bin);
+			for(unsigned ybin=1; ybin <= bin; ybin++){ //calculate only below the diagonal since expect Et ordering	
+		   	const float bin_low_edge_Y = h2A_QuadJetCentral_byThreshold->GetYaxis()->GetBinLowEdge(ybin);	
+		   	const float bin_center_Y = h2A_QuadJetCentral_byThreshold->GetYaxis()->GetBinCenter(ybin);
+		   	if(QuadJetCentral(bin_low_edge_X, bin_low_edge_Y,  bin_low_edge_Y,  bin_low_edge_Y)){
+			   	h2A_QuadJetCentral_byThreshold->Fill(bin_center_X,bin_center_Y,lumiWeight);
+		   	}
+			}	
+		}
+   }
+	//----------------------------------------------------------------------------------------------------------------------
+
+
+	//------ QuadJet ---- 2-D Evaluation (B)------------------------------------------------------------------------------
+	if(TwoDimScan) {	
+		const unsigned n_bins_QuadJetCentral_X = h2B_QuadJetCentral_byThreshold->GetNbinsX();
+//		const unsigned n_bins_QuadJetCentral_Y = h2B_QuadJetCentral_byThreshold->GetNbinsY();
+		for(unsigned bin=1; bin <= n_bins_QuadJetCentral_X+1; bin++){	
+	   	const float bin_low_edge_X = h2B_QuadJetCentral_byThreshold->GetXaxis()->GetBinLowEdge(bin);	
+			const float bin_center_X = h2B_QuadJetCentral_byThreshold->GetXaxis()->GetBinCenter(bin);
+			for(unsigned ybin=1; ybin <= bin; ybin++){	//calculate only below the diagonal since expect Et ordering
+		   	const float bin_low_edge_Y = h2B_QuadJetCentral_byThreshold->GetYaxis()->GetBinLowEdge(ybin);	
+		   	const float bin_center_Y = h2B_QuadJetCentral_byThreshold->GetYaxis()->GetBinCenter(ybin);
+		   	if(QuadJetCentral(bin_low_edge_X, bin_low_edge_X,  bin_low_edge_Y,  bin_low_edge_Y)){
+			   	h2B_QuadJetCentral_byThreshold->Fill(bin_center_X,bin_center_Y,lumiWeight);
+		   	}
+			}	
+		}
+   }
 	//----------------------------------------------------------------------------------------------------------------------
 	
 	//------ SingleTau -----------------------------------------------------------------------------------------------------
@@ -1965,6 +2211,87 @@ void L1Menu2015::EvalThresh(double lumiWeight) {
 	}
 	//----------------------------------------------------------------------------------------------------------------------	
 
+
+	//------ DoubleTau ---- 2-D Evaluation ------------------------------------------------------------------------------
+	if(TwoDimScan) {	
+		const unsigned n_bins_DoubleTau_X = h2_DoubleTau_byThreshold->GetNbinsX();
+//		const unsigned n_bins_DoubleTau_Y = h2_DoubleTau_byThreshold->GetNbinsY();
+		for(unsigned bin=1; bin <= n_bins_DoubleTau_X+1; bin++){	
+	   	const float bin_low_edge_X = h2_DoubleTau_byThreshold->GetXaxis()->GetBinLowEdge(bin);	
+			const float bin_center_X = h2_DoubleTau_byThreshold->GetXaxis()->GetBinCenter(bin);
+			for(unsigned ybin=1; ybin <= bin; ybin++){	//calculate only below the diagonal because it should be symmetric.
+		   	const float bin_low_edge_Y = h2_DoubleTau_byThreshold->GetYaxis()->GetBinLowEdge(ybin);	
+		   	const float bin_center_Y = h2_DoubleTau_byThreshold->GetYaxis()->GetBinCenter(ybin);
+		   	if(DoubleTauJetEta(bin_low_edge_X, bin_low_edge_Y, trigParList["L1_DoubleTau"].etaCut)){
+			   	h2_DoubleTau_byThreshold->Fill(bin_center_X,bin_center_Y,lumiWeight);
+		   	}
+			}	
+		}
+   }
+	//----------------------------------------------------------------------------------------------------------------------
+
+	//------ SingleTau +ETM -----------------------------------------------------------------------------------------------------
+	const unsigned n_bins_SingleTau_ETM = h_SingleTau_ETM_byThreshold->GetNbinsX();
+	for(unsigned bin=1; bin <= n_bins_SingleTau_ETM+1; bin++){
+		const float bin_low_edge = h_SingleTau_ETM_byThreshold->GetBinLowEdge(bin);
+		const float bin_center = h_SingleTau_ETM_byThreshold->GetBinCenter(bin);
+		if(Tau_ETM(bin_low_edge,bin_center*(trigParList["L1_SingleTau_CJet"].secTh/trigParList["L1_SingleTau_CJet"].primTh), trigParList["L1_SingleTau_ETM"].etaCut)){
+			h_SingleTau_ETM_byThreshold->Fill(bin_center,lumiWeight);
+		}
+	}
+	//----------------------------------------------------------------------------------------------------------------------			
+
+	//------ SingleTau + ETM---- 2-D Evaluation ------------------------------------------------------------------------------
+	if(TwoDimScan) {	
+		const unsigned n_bins_SingleTau_ETM_X = h2_SingleTau_ETM_byThreshold->GetNbinsX();
+		const unsigned n_bins_SingleTau_ETM_Y = h2_SingleTau_ETM_byThreshold->GetNbinsY();
+		for(unsigned bin=1; bin <= n_bins_SingleTau_ETM_X+1; bin++){	
+	   	const float bin_low_edge_X = h2_SingleTau_ETM_byThreshold->GetXaxis()->GetBinLowEdge(bin);	
+			const float bin_center_X = h2_SingleTau_ETM_byThreshold->GetXaxis()->GetBinCenter(bin);
+			for(unsigned ybin=1; ybin <= n_bins_SingleTau_ETM_Y+1; ybin++){	//calculate only below the diagonal because it should be symmetric.
+		   	const float bin_low_edge_Y = h2_SingleTau_ETM_byThreshold->GetYaxis()->GetBinLowEdge(ybin);	
+		   	const float bin_center_Y = h2_SingleTau_ETM_byThreshold->GetYaxis()->GetBinCenter(ybin);
+		   	if(Tau_ETM(bin_low_edge_X, bin_low_edge_Y, trigParList["L1_SingleTau_ETM"].etaCut)){
+			   	h2_SingleTau_ETM_byThreshold->Fill(bin_center_X,bin_center_Y,lumiWeight);
+		   	}
+			}	
+		}
+   }
+	//----------------------------------------------------------------------------------------------------------------------
+
+
+
+	//------ SingleTau + CJet -----------------------------------------------------------------------------------------------------
+	const unsigned n_bins_SingleTau_CJet = h_SingleTau_CJet_byThreshold->GetNbinsX();
+	for(unsigned bin=1; bin <= n_bins_SingleTau_CJet+1; bin++){
+		const float bin_low_edge = h_SingleTau_CJet_byThreshold->GetBinLowEdge(bin);
+		const float bin_center = h_SingleTau_CJet_byThreshold->GetBinCenter(bin);
+		if(Tau_JetCentral(bin_low_edge,bin_center*(trigParList["L1_SingleTau_CJet"].secTh/trigParList["L1_SingleTau_CJet"].primTh), trigParList["L1_SingleTau_CJet"].etaCut)){
+			h_SingleTau_CJet_byThreshold->Fill(bin_center,lumiWeight);
+		}
+	}
+	//----------------------------------------------------------------------------------------------------------------------			
+
+	//------ SingleTau + CJet---- 2-D Evaluation ------------------------------------------------------------------------------
+	if(TwoDimScan) {	
+		const unsigned n_bins_SingleTau_CJet_X = h2_SingleTau_CJet_byThreshold->GetNbinsX();
+		const unsigned n_bins_SingleTau_CJet_Y = h2_SingleTau_CJet_byThreshold->GetNbinsY();
+		for(unsigned bin=1; bin <= n_bins_SingleTau_CJet_X+1; bin++){	
+	   	const float bin_low_edge_X = h2_SingleTau_CJet_byThreshold->GetXaxis()->GetBinLowEdge(bin);	
+			const float bin_center_X = h2_SingleTau_CJet_byThreshold->GetXaxis()->GetBinCenter(bin);
+			for(unsigned ybin=1; ybin <= n_bins_SingleTau_CJet_Y+1; ybin++){	
+		   	const float bin_low_edge_Y = h2_SingleTau_CJet_byThreshold->GetYaxis()->GetBinLowEdge(ybin);	
+		   	const float bin_center_Y = h2_SingleTau_CJet_byThreshold->GetYaxis()->GetBinCenter(ybin);
+		   	if(Tau_JetCentral(bin_low_edge_X, bin_low_edge_Y, trigParList["L1_SingleTau_CJet"].etaCut)){
+			   	h2_SingleTau_CJet_byThreshold->Fill(bin_center_X,bin_center_Y,lumiWeight);
+		   	}
+			}	
+		}
+   }
+	//----------------------------------------------------------------------------------------------------------------------
+
+
+
 	//-------- HTT ---------------------------------------------------------------------------------------------------------
 	const unsigned n_bins_HTT = h_HTT_byThreshold->GetNbinsX();
 	for(unsigned bin=1; bin <= n_bins_HTT+1; bin++){
@@ -1983,6 +2310,95 @@ void L1Menu2015::EvalThresh(double lumiWeight) {
 			h_ETM_byThreshold->Fill(bin_center,lumiWeight);
 		}
 	}
+
+	//-------- HTT + ETM ---------------------------------------------------------------------------------------------------------
+	const unsigned n_bins_HTT_ETM = h_HTT_ETM_byThreshold->GetNbinsX();
+	for(unsigned bin=1; bin <= n_bins_HTT_ETM+1; bin++){
+		const float bin_low_edge = h_HTT_ETM_byThreshold->GetBinLowEdge(bin);
+		const float bin_center = h_HTT_ETM_byThreshold->GetBinCenter(bin);
+		if(HTT_ETM(bin_low_edge,bin_center*(trigParList["L1_HTT_ETM"].secTh/trigParList["L1_HTT_ETM"].primTh))){
+			h_HTT_ETM_byThreshold->Fill(bin_center,lumiWeight);
+		}
+	}
+
+	//------ HTT + ETM ---- 2-D Evaluation ------------------------------------------------------------------------------
+	if(TwoDimScan) {	
+		const unsigned n_bins_HTT_ETM_X = h2_HTT_ETM_byThreshold->GetNbinsX();
+		const unsigned n_bins_HTT_ETM_Y = h2_HTT_ETM_byThreshold->GetNbinsY();
+		for(unsigned bin=1; bin <= n_bins_HTT_ETM_X+1; bin++){	
+	   	const float bin_low_edge_X = h2_HTT_ETM_byThreshold->GetXaxis()->GetBinLowEdge(bin);	
+			const float bin_center_X = h2_HTT_ETM_byThreshold->GetXaxis()->GetBinCenter(bin);
+			for(unsigned ybin=1; ybin <= n_bins_HTT_ETM_Y+1; ybin++){	
+		   	const float bin_low_edge_Y = h2_HTT_ETM_byThreshold->GetYaxis()->GetBinLowEdge(ybin);	
+		   	const float bin_center_Y = h2_HTT_ETM_byThreshold->GetYaxis()->GetBinCenter(ybin);
+		   	if(HTT_ETM(bin_low_edge_X, bin_low_edge_Y)){
+			   	h2_HTT_ETM_byThreshold->Fill(bin_center_X,bin_center_Y,lumiWeight);
+		   	}
+			}	
+		}
+   }
+	//----------------------------------------------------------------------------------------------------------------------
+
+
+	//------ ETM + CJet -----------------------------------------------------------------------------------------------------
+	const unsigned n_bins_SingleCJet_ETM = h_SingleCJet_ETM_byThreshold->GetNbinsX();
+	for(unsigned bin=1; bin <= n_bins_SingleCJet_ETM+1; bin++){
+		const float bin_low_edge = h_SingleCJet_ETM_byThreshold->GetBinLowEdge(bin);
+		const float bin_center = h_SingleCJet_ETM_byThreshold->GetBinCenter(bin);
+		if(JetCentral_ETM(bin_low_edge, bin_center*(trigParList["L1_SingleCJet_ETM"].secTh/trigParList["L1_SingleCJet_ETM"].primTh), trigParList["L1_SingleCJet_ETM"].etaCut)){
+			h_SingleCJet_ETM_byThreshold->Fill(bin_center,lumiWeight);
+		}
+	}
+	//----------------------------------------------------------------------------------------------------------------------			
+
+	//------ ETM + CJet---- 2-D Evaluation ------------------------------------------------------------------------------
+	if(TwoDimScan) {	
+		const unsigned n_bins_SingleCJet_ETM_X = h2_SingleCJet_ETM_byThreshold->GetNbinsX();
+		const unsigned n_bins_SingleCJet_ETM_Y = h2_SingleCJet_ETM_byThreshold->GetNbinsY();
+		for(unsigned bin=1; bin <= n_bins_SingleCJet_ETM_X+1; bin++){	
+	   	const float bin_low_edge_X = h2_SingleCJet_ETM_byThreshold->GetXaxis()->GetBinLowEdge(bin);	
+			const float bin_center_X = h2_SingleCJet_ETM_byThreshold->GetXaxis()->GetBinCenter(bin);
+			for(unsigned ybin=1; ybin <= n_bins_SingleCJet_ETM_Y+1; ybin++){	
+		   	const float bin_low_edge_Y = h2_SingleCJet_ETM_byThreshold->GetYaxis()->GetBinLowEdge(ybin);	
+		   	const float bin_center_Y = h2_SingleCJet_ETM_byThreshold->GetYaxis()->GetBinCenter(ybin);
+		   	if(JetCentral_ETM(bin_low_edge_X, bin_low_edge_Y, trigParList["L1_SingleCJet_ETM"].etaCut)){
+			   	h2_SingleCJet_ETM_byThreshold->Fill(bin_center_X,bin_center_Y,lumiWeight);
+		   	}
+			}	
+		}
+   }
+	//----------------------------------------------------------------------------------------------------------------------
+
+	//------ ETM + CJet -----------------------------------------------------------------------------------------------------
+	const unsigned n_bins_DoubleCJet_ETM = h_DoubleCJet_ETM_byThreshold->GetNbinsX();
+	for(unsigned bin=1; bin <= n_bins_DoubleCJet_ETM+1; bin++){
+		const float bin_low_edge = h_DoubleCJet_ETM_byThreshold->GetBinLowEdge(bin);
+		const float bin_center = h_DoubleCJet_ETM_byThreshold->GetBinCenter(bin);
+		if(DoubleJetCentral_ETM(bin_low_edge,bin_center*(trigParList["L1_DoubleCJet_ETM"].secTh/trigParList["L1_DoubleCJet_ETM"].primTh), bin_center*(trigParList["L1_DoubleCJet_ETM"].triTh/trigParList["L1_DoubleCJet_ETM"].primTh), trigParList["L1_DoubleCJet_ETM"].etaCut)){
+			h_DoubleCJet_ETM_byThreshold->Fill(bin_center,lumiWeight);
+		}
+	}
+	//----------------------------------------------------------------------------------------------------------------------			
+
+	//------ ETM + CJet---- 2-D Evaluation ------------------------------------------------------------------------------
+	if(TwoDimScan) {	
+		const unsigned n_bins_DoubleCJet_ETM_X = h2_DoubleCJet_ETM_byThreshold->GetNbinsX();
+		const unsigned n_bins_DoubleCJet_ETM_Y = h2_DoubleCJet_ETM_byThreshold->GetNbinsY();
+		for(unsigned bin=1; bin <= n_bins_DoubleCJet_ETM_X+1; bin++){	
+	   	const float bin_low_edge_X = h2_DoubleCJet_ETM_byThreshold->GetXaxis()->GetBinLowEdge(bin);	
+			const float bin_center_X = h2_DoubleCJet_ETM_byThreshold->GetXaxis()->GetBinCenter(bin);
+			for(unsigned ybin=1; ybin <= n_bins_DoubleCJet_ETM_Y+1; ybin++){	
+		   	const float bin_low_edge_Y = h2_DoubleCJet_ETM_byThreshold->GetYaxis()->GetBinLowEdge(ybin);	
+		   	const float bin_center_Y = h2_DoubleCJet_ETM_byThreshold->GetYaxis()->GetBinCenter(ybin);
+		   	if(DoubleJetCentral_ETM(bin_low_edge_X, bin_low_edge_X, bin_low_edge_Y, trigParList["L1_DoubleCJet_ETM"].etaCut)){
+			   	h2_DoubleCJet_ETM_byThreshold->Fill(bin_center_X,bin_center_Y,lumiWeight);
+		   	}
+			}	
+		}
+   }
+	//----------------------------------------------------------------------------------------------------------------------
+
+
 
 }
 
@@ -2019,6 +2435,83 @@ Bool_t L1Menu2015::Mu_EG(Float_t mucut, Float_t EGcut , Int_t minMuQual) {
 	return ok;
 
 }
+
+
+Bool_t L1Menu2015::Mu_Tau(Float_t Mucut, Float_t taucut , Float_t etaCut, Int_t minMuQual) {
+
+	Bool_t raw = PhysicsBits[0];    // ZeroBias
+	if (! raw) return false;
+
+
+	Bool_t tau =false;
+	Bool_t muon = false;
+
+	Int_t Nmu = myEvt_.Nmu;
+	for (Int_t imu=0; imu < Nmu; imu++) {   
+		Int_t bx = myEvt_.Bxmu.at(imu);		
+		if (bx != 0) continue;
+		Float_t pt = myEvt_.Ptmu.at(imu);			
+		Int_t qual = myEvt_.Qualmu.at(imu);        
+		if ( qual < minMuQual) continue;
+		if (pt >= Mucut) muon = true;
+	}
+
+	Int_t Nj = myEvt_.Njet ;
+	for (Int_t ue=0; ue < Nj; ue++) {
+		Int_t bx = myEvt_.Bxjet[ue];        		
+		if (bx != 0) continue;
+		Bool_t isTauJet = myEvt_.Taujet[ue];
+		if (!isTauJet) continue;
+		Float_t eta = myEvt_.Etajet[ue];
+		if (eta < etaCut || eta > 21.-etaCut) continue;  // eta = 5 - 16
+		Float_t rank = myEvt_.Etjet[ue];
+		Float_t pt = rank; //CorrectedL1JetPtByGCTregions(myEvt_.Etajet[ue],rank*4.,theL1JetCorrection);
+		if (pt >= taucut) tau = true;
+	}
+
+	Bool_t ok = muon && tau;
+	return ok;
+
+}
+
+
+Bool_t L1Menu2015::EG_Tau(Float_t EGcut, Float_t taucut , Float_t etaCut) {
+
+	Bool_t raw = PhysicsBits[0];    // ZeroBias
+	if (! raw) return false;
+
+
+	Bool_t tau =false;
+	Bool_t eg = false;
+
+	Int_t Nele = myEvt_.Nele;
+	for (Int_t ue=0; ue < Nele; ue++) {
+		Int_t bx = myEvt_.Bxel[ue];        		
+		if (bx != 0) continue;
+		Float_t rank = myEvt_.Etel[ue];    // the rank of the electron
+		Float_t pt = rank ;
+		if (pt >= EGcut) eg = true;
+	}  // end loop over EM objects
+
+	Int_t Nj = myEvt_.Njet ;
+	for (Int_t ue=0; ue < Nj; ue++) {
+		Int_t bx = myEvt_.Bxjet[ue];        		
+		if (bx != 0) continue;
+		Bool_t isTauJet = myEvt_.Taujet[ue];
+		if (!isTauJet) continue;
+		Float_t eta = myEvt_.Etajet[ue];
+		if (eta < etaCut || eta > 21.-etaCut) continue;  // eta = 5 - 16
+		Float_t rank = myEvt_.Etjet[ue];
+		Float_t pt = rank; //CorrectedL1JetPtByGCTregions(myEvt_.Etajet[ue],rank*4.,theL1JetCorrection);
+		if (pt >= taucut) tau = true;
+	}
+
+	Bool_t ok = eg && tau;
+	return ok;
+
+}
+
+
 
 Bool_t L1Menu2015::DoubleMu_EG(Float_t mucut, Float_t EGcut ) {
 
@@ -3289,7 +3782,92 @@ Bool_t L1Menu2015::HTT_HTM(Float_t HTTcut, Float_t HTMcut) {
 
 }
 
-Bool_t L1Menu2015::JetCentral_ETM(Float_t jetcut, Float_t ETMcut) {
+Bool_t L1Menu2015::HTT_ETM(Float_t HTTcut, Float_t ETMcut) {
+
+	Bool_t raw = PhysicsBits[0];   // ZeroBias  
+	if (! raw) return false;
+
+	Bool_t htt = false;
+	Bool_t etm = false;
+	Float_t adc = myEvt_.HTT;   
+	Float_t TheHTT =  adc; // / 2.   ;          
+	htt = ( TheHTT >= HTTcut ) ;
+
+	Int_t adc_ETM  = myEvt_.ETM ; 
+	Float_t TheETM = adc_ETM; // * 2.  ;           
+	etm = ( TheETM >= ETMcut );
+
+	Bool_t ok = (htt && etm);
+	return ok;
+
+}
+
+Bool_t L1Menu2015::Tau_ETM(Float_t taucut, Float_t ETMcut, Float_t etaCut) {
+
+	Bool_t raw = PhysicsBits[0];   // ZeroBias  
+	if (! raw) return false;
+
+	Bool_t etm = false;
+	Bool_t jet = false;
+
+	Float_t adc = myEvt_.ETM ;
+	Float_t TheETM = adc; // / 2. ;
+	etm = (TheETM >= ETMcut);
+
+	Int_t Nj = myEvt_.Njet ;
+	for (Int_t ue=0; ue < Nj; ue++) {
+		Int_t bx = myEvt_.Bxjet[ue];        		
+		if (bx != 0) continue;
+		Bool_t isTauJet = myEvt_.Taujet[ue];
+		if (!isTauJet) continue;
+		Float_t eta = myEvt_.Etajet[ue];
+		if (eta < etaCut || eta > 21.-etaCut) continue;  // eta = 5 - 16
+		Float_t rank = myEvt_.Etjet[ue];
+		Float_t pt = rank; //CorrectedL1JetPtByGCTregions(myEvt_.Etajet[ue],rank*4.,theL1JetCorrection);
+		if (pt >= taucut) jet = true;
+	}
+
+	Bool_t ok = ( jet && etm );
+	return ok;
+	
+}
+
+Bool_t L1Menu2015::Tau_JetCentral(Float_t taucut, Float_t jetcut, Float_t etaCut) {
+
+	Bool_t raw = PhysicsBits[0];   // ZeroBias  
+	if (! raw) return false;
+
+	Bool_t tau = false;
+	Bool_t jet = false;
+
+	Int_t Nj = myEvt_.Njet ;
+	for (Int_t ue=0; ue < Nj; ue++) {
+		Int_t bx = myEvt_.Bxjet[ue];        		
+		if (bx != 0) continue;
+		Bool_t isFwdJet = myEvt_.Fwdjet[ue];
+		if (isFwdJet) continue;		
+		Float_t rank = myEvt_.Etjet[ue];
+		Float_t pt = rank; //CorrectedL1JetPtByGCTregions(myEvt_.Etajet[ue],rank*4.,theL1JetCorrection);
+      Float_t eta= myEvt_.Etajet[ue];
+		
+		Bool_t isTauJet = myEvt_.Taujet[ue];
+		if (isTauJet) {
+		  if (pt >= taucut) tau = true;
+		} else {
+		  if (eta < etaCut || eta > 21.-etaCut) continue;  // eta = 5 - 16
+		  if (pt >= jetcut) jet = true;
+		}
+		
+		
+	}
+
+	Bool_t ok = ( jet && tau );
+	return ok;
+	
+}
+
+
+Bool_t L1Menu2015::JetCentral_ETM(Float_t jetcut, Float_t ETMcut, Float_t etaCut) {
 
 	Bool_t raw = PhysicsBits[0];   // ZeroBias  
 	if (! raw) return false;
@@ -3307,6 +3885,10 @@ Bool_t L1Menu2015::JetCentral_ETM(Float_t jetcut, Float_t ETMcut) {
 		if (bx != 0) continue;
 		Bool_t isFwdJet = myEvt_.Fwdjet[ue];
 		if (isFwdJet) continue;
+		Bool_t isTauJet = myEvt_.Taujet[ue];
+		if (isTauJet) continue;
+		Float_t eta = myEvt_.Etajet[ue];
+		if (eta < etaCut || eta > 21.-etaCut) continue;  // eta = 5 - 16
 		Float_t rank = myEvt_.Etjet[ue];
 		Float_t pt = rank; //CorrectedL1JetPtByGCTregions(myEvt_.Etajet[ue],rank*4.,theL1JetCorrection);
 		if (pt >= jetcut) jet = true;
@@ -3317,7 +3899,7 @@ Bool_t L1Menu2015::JetCentral_ETM(Float_t jetcut, Float_t ETMcut) {
 	
 }
 
-Bool_t L1Menu2015::DoubleJetCentral_ETM(Float_t jetcut1, Float_t jetcut2, Float_t ETMcut) {
+Bool_t L1Menu2015::DoubleJetCentral_ETM(Float_t jetcut1, Float_t jetcut2, Float_t ETMcut, Float_t etaCut) {
 
 	Bool_t raw = PhysicsBits[0];   // ZeroBias  
 	if (! raw) return false;
@@ -3337,6 +3919,10 @@ Bool_t L1Menu2015::DoubleJetCentral_ETM(Float_t jetcut1, Float_t jetcut2, Float_
 		if (bx != 0) continue;
 		Bool_t isFwdJet = myEvt_.Fwdjet[ue];
 		if (isFwdJet) continue;
+		Bool_t isTauJet = myEvt_.Taujet[ue];
+		if (isTauJet) continue;		
+		Float_t eta = myEvt_.Etajet[ue];
+		if (eta < etaCut || eta > 21.-etaCut) continue;  // eta = 5 - 16
 		Float_t rank = myEvt_.Etjet[ue];
 		Float_t pt = rank; //CorrectedL1JetPtByGCTregions(myEvt_.Etajet[ue],rank*4.,theL1JetCorrection);
 		if (pt >= jetcut1) n1 ++;
@@ -3944,18 +4530,10 @@ void L1Menu2015::Loop(Bool_t calcThreshold, Bool_t useL1Extra, TString lsRunFile
 
 
 
-void RunL1_HFW(Bool_t calcThreshold=true,Bool_t useL1Extra=true,Int_t usedL1Menu=0,Float_t targetlumi=200,Int_t whichFileAndLumiToUse=1,int which_jet_seed_to_use=0, Int_t pMenu2015 = 0, Int_t pNevts = -1) {
+void RunL1_HFW(Bool_t calcThreshold=false,Bool_t useL1Extra=true, Int_t pMenu2015 = 0, Int_t usedL1MenuThr=0,Int_t whichDataSetToUse=1,Int_t whichFileToUse=0, Float_t targetlumi=200, Int_t pNevts = -1) {
 
 // Make sure we get the errors correct on histograms   
 	TH1::SetDefaultSumw2();
-
-
-//which_jet_seed_to_use:
-
-//0: default
-//1: reEmul
-//2: 5 GeV 
-
 
 //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 	// Using the 10-bunches High PU run, 179828. In this run ETM30 and HTT50 were enabled (they were not enabled in the 1-bunch run).
@@ -3971,11 +4549,11 @@ void RunL1_HFW(Bool_t calcThreshold=true,Bool_t useL1Extra=true,Int_t usedL1Menu
 	TString lsFileName = "";
 	
 
-	if (whichFileAndLumiToUse==1) {
+	if (whichDataSetToUse==1) {
 	// -- Run 179828, LS 374 - 394, PU=28:
 		NumberOfUserdLumiSections = 21; 
 		LumiForThisSetOfLumiSections = 0.437;
-		switch(which_jet_seed_to_use){
+		switch(whichFileToUse){
 			case 0:
 				L1NtupleFileName = "/uscms_data/d1/winer/batch_tutorial/L1Tree_R179828_LS374-394.root";
 				jobTag = "R179828_LS374-394";
@@ -3995,12 +4573,12 @@ void RunL1_HFW(Bool_t calcThreshold=true,Bool_t useL1Extra=true,Int_t usedL1Menu
 		ZeroBiasPrescale = 3 * 148; //L1 Prescale * HLT Prescale
 		L1JetCorrection=false;
 	}
-	else if (whichFileAndLumiToUse==2) {
+	else if (whichDataSetToUse==2) {
 
 	// -- Run 179828, LS 300 - 320, PU=29:
 		NumberOfUserdLumiSections = 21; 
 		LumiForThisSetOfLumiSections = 0.463;
-		switch(which_jet_seed_to_use){
+		switch(whichFileToUse){
 			case 0:
 				L1NtupleFileName = "/uscms_data/d1/winer/batch_tutorial/L1Tree_R179828_LS300-320.root";
 				jobTag = "R179828_LS300-320";
@@ -4020,12 +4598,12 @@ void RunL1_HFW(Bool_t calcThreshold=true,Bool_t useL1Extra=true,Int_t usedL1Menu
 		ZeroBiasPrescale = 3 * 148; //L1 Prescale * HLT Prescale
 		L1JetCorrection=false;
 	}
-	else if (whichFileAndLumiToUse==3) {
+	else if (whichDataSetToUse==3) {
 
 	// -- Run 179828, LS 270 - 290, PU=30:
 		NumberOfUserdLumiSections = 21; 
 		LumiForThisSetOfLumiSections = 0.470;
-		switch(which_jet_seed_to_use){
+		switch(whichFileToUse){
 			case 0:
 				L1NtupleFileName = "/uscms_data/d1/winer/batch_tutorial/L1Tree_R179828_LS270-290.root";
 				jobTag = "R179828_LS270-290";
@@ -4045,12 +4623,12 @@ void RunL1_HFW(Bool_t calcThreshold=true,Bool_t useL1Extra=true,Int_t usedL1Menu
 		ZeroBiasPrescale = 3 * 148; //L1 Prescale * HLT Prescale
 		L1JetCorrection=false;
 	}
-	else if (whichFileAndLumiToUse==4) {
+	else if (whichDataSetToUse==4) {
 
 	// -- Run 179828, LS 140 - 160, PU=33:
 		NumberOfUserdLumiSections = 21; 
 		LumiForThisSetOfLumiSections = 0.509;
-		switch(which_jet_seed_to_use){
+		switch(whichFileToUse){
 			case 0:
 				L1NtupleFileName = "/uscms_data/d1/winer/batch_tutorial/L1Tree_R179828_LS140-160.root";
 				jobTag = "R179828_LS140-160";
@@ -4070,12 +4648,12 @@ void RunL1_HFW(Bool_t calcThreshold=true,Bool_t useL1Extra=true,Int_t usedL1Menu
 		ZeroBiasPrescale = 3 * 148; //L1 Prescale * HLT Prescale
 		L1JetCorrection=false;
 	}
-	else if (whichFileAndLumiToUse==5) {
+	else if (whichDataSetToUse==5) {
 
 	// -- Run 179828, LS 50 - 70, PU=34:
 		NumberOfUserdLumiSections = 21; 
 		LumiForThisSetOfLumiSections = 0.529;
-		switch(which_jet_seed_to_use){
+		switch(whichFileToUse){
 			case 0:
 				L1NtupleFileName = "/uscms_data/d1/winer/batch_tutorial/L1Tree_R179828_LS050-070.root";
 				jobTag = "R179828_LS050-070";		
@@ -4095,12 +4673,12 @@ void RunL1_HFW(Bool_t calcThreshold=true,Bool_t useL1Extra=true,Int_t usedL1Menu
 		ZeroBiasPrescale = 3 * 148; //L1 Prescale * HLT Prescale
 		L1JetCorrection=false;
 	}
-	else if (whichFileAndLumiToUse==6) {
+	else if (whichDataSetToUse==6) {
 
 	// -- Run 178803, LS 400 - 420, PU=18, (with bunch trains i.e. possible OOT PU): 
 		NumberOfUserdLumiSections = 21; 
 		LumiForThisSetOfLumiSections = 0.131;
-		switch(which_jet_seed_to_use){
+		switch(whichFileToUse){
 			case 0:
 				L1NtupleFileName = "/uscms_data/d1/winer/batch_tutorial/L1Tree_R178803_LS400-420.root";
 				jobTag = "R178803_LS400-420";
@@ -4120,14 +4698,14 @@ void RunL1_HFW(Bool_t calcThreshold=true,Bool_t useL1Extra=true,Int_t usedL1Menu
 		ZeroBiasPrescale = 29483;
 		L1JetCorrection=false;
 	}
-	else if (whichFileAndLumiToUse==7) {
+	else if (whichDataSetToUse==7) {
 	// -- MC Run
 	   int nevt = 2497500;
 		if(procNevts>0) nevt = procNevts;
 		NumberOfUserdLumiSections = (float)nevt/(10.*11246.* 23.3);  //lumi section time/number of mc events in file 23.3 gets removed below.
 		LumiForThisSetOfLumiSections = 0.529;
 		//LumiForThisSetOfLumiSections = targetlumi; //make scale factor 1.0
-		switch(which_jet_seed_to_use){
+		switch(whichFileToUse){
 			case 0:
 				L1NtupleFileName = "/obsidian/users/winer/cms/L1Trigger/Simulations/L1SKIM_MC_7TeV_Ave32-v3_AllSet0_NoGCT_reEmul.root";
 				jobTag = "MCv2_Ave32_Set0";
@@ -4147,14 +4725,14 @@ void RunL1_HFW(Bool_t calcThreshold=true,Bool_t useL1Extra=true,Int_t usedL1Menu
 		ZeroBiasPrescale = 1;  //MC No prescale
 		L1JetCorrection=false;
 	}	
-	else if (whichFileAndLumiToUse==8) {
+	else if (whichDataSetToUse==8) {
 	// -- MC Run
 	   int nevt = 360000;
 		if(procNevts>0) nevt = procNevts;
 		NumberOfUserdLumiSections = (float)nevt/(2808.*11246.*23.3);  //lumi section time/number of mc events in file 23.3 gets removed below.
 		LumiForThisSetOfLumiSections = 200.;
 		//LumiForThisSetOfLumiSections = targetlumi; //make scale factor 1.0
-		switch(which_jet_seed_to_use){
+		switch(whichFileToUse){
 			case 0:
 				L1NtupleFileName = "";
 				jobTag = "MCv2_Ave32_Set0";
@@ -4174,12 +4752,12 @@ void RunL1_HFW(Bool_t calcThreshold=true,Bool_t useL1Extra=true,Int_t usedL1Menu
 		ZeroBiasPrescale = 1;  //MC No prescale
 		L1JetCorrection=false;
 	}
-	else if (whichFileAndLumiToUse==9) {
+	else if (whichDataSetToUse==9) {
 	// -- MC Run
 		NumberOfUserdLumiSections = 63; 
 		LumiForThisSetOfLumiSections = 0.1765; //units of e32
 
-		switch(which_jet_seed_to_use){
+		switch(whichFileToUse){
 			case 0:
 				L1NtupleFileName = "/obsidian/users/winer/cms/L1Trigger/Simulations/Bristol/8TeV/ZeroBiasHPF1/2012HPF_66_v1/Test2.root";
 				jobTag = "ZeroBiasHPF1_66";
@@ -4192,12 +4770,12 @@ void RunL1_HFW(Bool_t calcThreshold=true,Bool_t useL1Extra=true,Int_t usedL1Menu
 		ZeroBiasPrescale = 92;  //MC No prescale
 		L1JetCorrection=false;
 	}
-	else if (whichFileAndLumiToUse==10) {
+	else if (whichDataSetToUse==10) {
 	// -- MC Run
 		NumberOfUserdLumiSections = 143; 
 		LumiForThisSetOfLumiSections = 0.061; // Note: wide range in this file...average is not a good thing //units of e32
 
-		switch(which_jet_seed_to_use){
+		switch(whichFileToUse){
 			case 0:
 				L1NtupleFileName = "/obsidian/users/winer/cms/L1Trigger/Simulations/Bristol/8TeV/ZeroBiasHPF1/2012HPF_45_v1/Test.root";
 				jobTag = "ZeroBiasHPF1_45";
@@ -4210,12 +4788,12 @@ void RunL1_HFW(Bool_t calcThreshold=true,Bool_t useL1Extra=true,Int_t usedL1Menu
 		ZeroBiasPrescale = 92;  //MC No prescale
 		L1JetCorrection=false;
 	} 
-	else if (whichFileAndLumiToUse==11) {
+	else if (whichDataSetToUse==11) {
 	// -- MC Run
 		NumberOfUserdLumiSections = 143; 
 		LumiForThisSetOfLumiSections = 0.061; // Note: wide range in this file...average is not a good thing //units of e32
 
-		switch(which_jet_seed_to_use){
+		switch(whichFileToUse){
 			case 0:
 				L1NtupleFileName = "/obsidian/users/winer/cms/L1Trigger/Simulations/Bristol/8TeV/UpgradeAlgos/ZeroBiasHPF1/2012HPF_45_v1/Test.root";
 				jobTag = "UpgradeAlgo_ZeroBiasHPF1_45";
@@ -4228,14 +4806,14 @@ void RunL1_HFW(Bool_t calcThreshold=true,Bool_t useL1Extra=true,Int_t usedL1Menu
 		ZeroBiasPrescale = 92;  //MC No prescale
 		L1JetCorrection=false;
 	} 	
-	else if (whichFileAndLumiToUse==12) {
+	else if (whichDataSetToUse==12) {
 	// -- MC Run
 	   int nevt = 3100;
 		if(procNevts>0) nevt = procNevts;
 		NumberOfUserdLumiSections = (float)nevt/(2808.*11246.*23.3);  //lumi section time/number of mc events in file 23.3 gets removed below.
 		LumiForThisSetOfLumiSections = 200.;
 
-		switch(which_jet_seed_to_use){
+		switch(whichFileToUse){
 			case 0:
 				L1NtupleFileName = "/obsidian/users/winer/cms/L1Trigger/Simulations/L1NT_myminbias_8TeV_pu66_534_all.root";
 				jobTag = "RichardTest";
@@ -4248,7 +4826,7 @@ void RunL1_HFW(Bool_t calcThreshold=true,Bool_t useL1Extra=true,Int_t usedL1Menu
 		L1JetCorrection=false;
 	} 	 	 		 	 
 	else {
-		std::cout << std::endl << "ERROR: Please define a ntuple file which is in the allowed range! You did use: whichFileAndLumiToUse = " << whichFileAndLumiToUse << " This is not in the allowed range" << std::endl << std::endl;
+		std::cout << std::endl << "ERROR: Please define a ntuple file which is in the allowed range! You did use: whichDataSetToUse = " << whichDataSetToUse << " This is not in the allowed range" << std::endl << std::endl;
 	}
 
 //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -4256,7 +4834,7 @@ void RunL1_HFW(Bool_t calcThreshold=true,Bool_t useL1Extra=true,Int_t usedL1Menu
 
 	std::stringstream histos;
 	std::string MenuPar = "Menu2015";
-	histos << "L1RateHist_" << jobTag << "_" << MenuPar << "_" << usedL1Menu << "_" << targetlumi << "_" << AveragePU << "_" << LumiForThisSetOfLumiSections << "_rates.root";
+	histos << "L1RateHist_" << jobTag << "_" << MenuPar << "_" << Menu2015 << "_" << usedL1MenuThr << "_" << targetlumi << "_" << AveragePU << "_" << LumiForThisSetOfLumiSections << "_rates.root";
         TString outHistName = histos.str();
 	TFile* outHist = new TFile(outHistName,"RECREATE");
 	outHist->cd();
@@ -4309,20 +4887,41 @@ void RunL1_HFW(Bool_t calcThreshold=true,Bool_t useL1Extra=true,Int_t usedL1Menu
 	h_SingleEG_CJet_byThreshold = new TH1F("h_SingleEG_CJet_byThreshold","h_SingleEG_CJet_byThreshold",64,-0.5,63.5);
 	h2_SingleEG_CJet_byThreshold= new TH2F("h2_SingleEG_CJet_byThreshold","h2_SingleEG_CJet_byThreshold",64,-0.5,63.5,51,-2.,202.);
 
-	h_Mu_EG_byThreshold = new TH1F("h_Mu_EG_byThreshold","h_Mu_EG_byThreshold",141,-0.5,140.5);
-	h_EG_Mu_byThreshold = new TH1F("h_EG_Mu_byThreshold","h_EG_Mu_byThreshold",64,-0.5,63.5);
-   h2_Mu_EG_byThreshold= new TH2F("h2_Mu_EG_byThreshold","h2_Mu_EG_byThreshold",141,-0.5,140.5,64,-0.5,63.5);
+	h_Mu_EG_byThreshold  = new TH1F("h_Mu_EG_byThreshold","h_Mu_EG_byThreshold",141,-0.5,140.5);
+	h_EG_Mu_byThreshold  = new TH1F("h_EG_Mu_byThreshold","h_EG_Mu_byThreshold",64,-0.5,63.5);
+   h2_Mu_EG_byThreshold = new TH2F("h2_Mu_EG_byThreshold","h2_Mu_EG_byThreshold",141,-0.5,140.5,64,-0.5,63.5);
+	h_Mu_Tau_byThreshold = new TH1F("h_Mu_Tau_byThreshold","h_Mu_Tau_byThreshold",141,-0.5,140.5);
+	h_EG_Tau_byThreshold = new TH1F("h_EG_Tau_byThreshold","h_EG_Tau_byThreshold",64,-0.5,63.5);
+   h2_Mu_Tau_byThreshold= new TH2F("h2_Mu_Tau_byThreshold","h2_Mu_Tau_byThreshold",141,-0.5,140.5,51,-2.,202.);
+   h2_EG_Tau_byThreshold= new TH2F("h2_EG_Tau_byThreshold","h2_EG_Tau_byThreshold",64,-0.5,63.5,51,-2.,202.);
 	
 //Jets
-	h_SingleJet_byThreshold      = new TH1F("h_SingleJet_byThreshold","h_SingleJet_byThreshold",101,-2.,402.);
-   h_DoubleJet_byThreshold      = new TH1F("h_DoubleJet_byThreshold","h_DoubleJet_byThreshold",101,-2.,402.);
-	h_QuadJetCentral_byThreshold = new TH1F("h_QuadJetCentral_byThreshold","h_QuadJetCentral_byThreshold",101,-2.,402.);
-	h_SingleTau_byThreshold      = new TH1F("h_SingleTau_byThreshold","h_SingleTau_byThreshold",101,-2.,402.);
-	h_DoubleTau_byThreshold      = new TH1F("h_DoubleTau_byThreshold","h_DoubleTau_byThreshold",101,-2.,402.);
+	h_SingleJet_byThreshold       = new TH1F("h_SingleJet_byThreshold","h_SingleJet_byThreshold",101,-2.,402.);
+   h_DoubleJet_byThreshold       = new TH1F("h_DoubleJet_byThreshold","h_DoubleJet_byThreshold",101,-2.,402.);
+	h2_DoubleJet_byThreshold      = new TH2F("h2_DoubleJet_byThreshold","h2_DoubleJet_byThreshold",51,-2.,202.,51,-2.,202.);
+	h_QuadJetCentral_byThreshold  = new TH1F("h_QuadJetCentral_byThreshold","h_QuadJetCentral_byThreshold",101,-2.,402.);
+	h2A_QuadJetCentral_byThreshold= new TH2F("h2A_QuadJetCentral_byThreshold","h2A_QuadJetCentral_byThreshold (1,3)",51,-2.,202.,51,-2.,202.);
+	h2B_QuadJetCentral_byThreshold= new TH2F("h2B_QuadJetCentral_byThreshold","h2B_QuadJetCentral_byThreshold (2,2)",51,-2.,202.,51,-2.,202.);
+	h_SingleCJet_ETM_byThreshold  = new TH1F("h_SingleCJet_ETM_byThreshold","h_SingleCJet_ETM_byThreshold",101,-2.,402.);
+	h2_SingleCJet_ETM_byThreshold = new TH2F("h2_SingleCJet_ETM_byThreshold","h2_SingleCJet_ETM_byThreshold",101,-2.,402.,201,-0.25,100.25);
+	h_DoubleCJet_ETM_byThreshold  = new TH1F("h_DoubleCJet_ETM_byThreshold","h_DoubleCJet_ETM_byThreshold",101,-2.,402.);
+	h2_DoubleCJet_ETM_byThreshold = new TH2F("h2_DoubleCJet_ETM_byThreshold","h2_DoubleCJet_ETM_byThreshold",101,-2.,402.,201,-0.25,100.25);
+
+// Taus
+	h_SingleTau_byThreshold       = new TH1F("h_SingleTau_byThreshold","h_SingleTau_byThreshold",101,-2.,402.);
+	h_DoubleTau_byThreshold       = new TH1F("h_DoubleTau_byThreshold","h_DoubleTau_byThreshold",101,-2.,402.);
+	h2_DoubleTau_byThreshold      = new TH2F("h2_DoubleTau_byThreshold","h2_DoubleTau_byThreshold",51,-2.,202.,51,-2.,202.);
+	h_SingleTau_ETM_byThreshold   = new TH1F("h_SingleTau_ETM_byThreshold","h_SingleTau_ETM_byThreshold",51,-2.,202.);
+	h2_SingleTau_ETM_byThreshold  = new TH2F("h2_SingleTau_ETM_byThreshold","h2_SingleTau_ETM_byThreshold",51,-2.,202.,201,-0.25,100.25);	
+	h_SingleTau_CJet_byThreshold  = new TH1F("h_SingleTau_CJet_byThreshold","h_SingleTau_CJet_byThreshold",101,-2.,402.);
+	h2_SingleTau_CJet_byThreshold = new TH2F("h2_SingleTau_CJet_byThreshold","h2_SingleTau_CJet_byThreshold",51,-2.,202.,51,-2.,202.);
 
 //Sums 
 	h_HTT_byThreshold = new TH1F("h_HTT_byThreshold","h_HTT_byThreshold",1601,-0.25,800.25);
 	h_ETM_byThreshold = new TH1F("h_ETM_byThreshold","h_ETM_byThreshold",201 ,-0.25,100.25);
+   h_HTT_ETM_byThreshold = new TH1F("h_HTT_ETM_byThreshold","h_HTT_ETM_byThreshold",1601,-0.25,800.25);
+   h2_HTT_ETM_byThreshold = new TH2F("h2_HTT_ETM_byThreshold","h_HTT_ETM_byThreshold",401,-0.25,200.25,201,-0.25,100.25);
+
 //EGamma
 	h_SingleEG_byThreshold    = new TH1F("h_SingleEG_byThreshold","h_SingleEG_byThreshold",64,-0.5,63.5);
 	h_SingleIsoEG_byThreshold = new TH1F("h_SingleIsoEG_byThreshold","h_SingleIsoEG_byThreshold",64,-0.5,63.5);
@@ -4385,21 +4984,24 @@ void RunL1_HFW(Bool_t calcThreshold=true,Bool_t useL1Extra=true,Int_t usedL1Menu
 	h_Cumm = new TH1F("h_Cumm","h_Cumm",N128,-0.5,N128+0.5);
 
 // Time to dump the configuration 
-	std::cout << std::endl << "L1 menu used = " << usedL1Menu << std::endl;
-	std::cout << std::endl << "Target Luminosity = " << targetlumi << std::endl << std::endl;
-	std::cout << std::endl << "Using: whichFileAndLumiToUse = " << whichFileAndLumiToUse << std::endl;
-	std::cout << "  NumberOfUserdLumiSections        = " << NumberOfUserdLumiSections << std::endl;
-	std::cout << "  LumiForThisSetOfLumiSections     = " << LumiForThisSetOfLumiSections << std::endl;
-	std::cout << "  L1NtupleFileName                 = " << L1NtupleFileName << std::endl;
-	std::cout << "  lsFileName                       = " << lsFileName.Data() << std::endl;
-	std::cout << "  AveragePU                        = " << AveragePU << std::endl;
-	std::cout << "  Use L1Extra Quantities           = " << useL1Extra << std::endl;
-   std::cout << "  Calculate Threshold Plots        = " << calcThreshold  << std::endl;
-   std::cout << "  L1JetCorrections (for 2011 data) = " << L1JetCorrection << std::endl << std::endl;
-
+   std::cout << std::endl;
+   std::cout << " =======================================================================" << std::endl;
+   std::cout << "  L1 menu                       = " << Menu2015 << std::endl; 
+	std::cout << "  L1 menu thresholds used       = " << usedL1MenuThr << std::endl;
+	std::cout << "  Target Luminosity             = " << targetlumi << std::endl;
+	std::cout << "  Using: Data Set               = " << whichDataSetToUse << std::endl;
+	std::cout << "  NumberOfUserdLumiSections     = " << NumberOfUserdLumiSections << std::endl;
+	std::cout << "  LumiForThisSetOfLumiSections  = " << LumiForThisSetOfLumiSections << std::endl;
+	std::cout << "  L1NtupleFileName              = " << L1NtupleFileName << std::endl;
+	std::cout << "  LS File Name                  = " << lsFileName.Data() << std::endl;
+	std::cout << "  AveragePU                     = " << AveragePU << std::endl;
+	std::cout << "  Use L1Extra Quantities        = " << useL1Extra << std::endl;
+   std::cout << "  Calculate Threshold Plots     = " << calcThreshold  << std::endl;
+   std::cout << " =======================================================================" << std::endl;
+   std::cout << std::endl;
 
 //  Do the heavy lifting
-	L1Menu2015 a(usedL1Menu,targetlumi,NumberOfUserdLumiSections,LumiForThisSetOfLumiSections,
+	L1Menu2015 a(usedL1MenuThr,targetlumi,NumberOfUserdLumiSections,LumiForThisSetOfLumiSections,
 			L1NtupleFileName,AveragePU,ZeroBiasPrescale,L1JetCorrection);
 	a.Open(L1NtupleFileName);
 	a.Loop(calcThreshold,useL1Extra,lsFileName,procNevts);
