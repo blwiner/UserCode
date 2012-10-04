@@ -76,7 +76,7 @@ TH2F *h2_EG_Tau_byThreshold;
 TH1F *h_SingleJet_byThreshold;
 TH1F *h_DoubleJet_byThreshold;
 TH2F *h2_DoubleJet_byThreshold;
-TH1F *h_QuadJetCentral_byThreshold;
+TH1F *h_QuadJetC_byThreshold;
 TH2F *h2A_QuadJetCentral_byThreshold;
 TH2F *h2B_QuadJetCentral_byThreshold;
 TH1F *h_SingleCJet_ETM_byThreshold;
@@ -301,6 +301,7 @@ void CorrectScale(TH1F* h, Float_t scal) {
 class L1Menu2015 : public L1Ntuple {
 	public :
 
+
 	L1Menu2015(Int_t aL1Menu,Float_t aTargetLumi, Float_t aNumberOfUserdLumiSections, Float_t aLumiForThisSetOfLumiSections, std::string aL1NtupleFileName,Float_t aAveragePU, Float_t aZeroBiasPrescale,Bool_t aL1JetCorrection) : 
      	theL1Menu(aL1Menu), 
 		theTargetLumi(aTargetLumi), 
@@ -312,7 +313,21 @@ class L1Menu2015 : public L1Ntuple {
 		theL1JetCorrection(aL1JetCorrection)
 		{}
 
+
+//	L1Menu2015()
+//		{ printf("Here\n"); }
+
 	~L1Menu2015() {}
+
+
+     Float_t RunL1Ana(
+      	TString L1MenuFileName, 					//File name containing L1 Menu Algorithms and thresholds. (See InitL1Menu for format)
+      	TString lsFileName,  						//LumiSection Luminosity (used for data)
+      	TString jobTag = "Test",					//Job tag for storing output
+      	Int_t   procNevts=-1,						//Number of events to run over.  If -1, run over all events in the file
+      	Int_t   makeThresholdPlots=0,  			//Flag for whether to calculate the rate vs threshold plots (0=skip all; 1=do 1-D plots; 2=do 1-d and 2-d plots)
+      	Bool_t  useL1Extra=true 					//Flag for whether to use L1Extra values
+                );
 
 	Int_t theL1Menu;
 
@@ -329,7 +344,8 @@ class L1Menu2015 : public L1Ntuple {
 	Float_t theZeroBiasPrescale;
 	Bool_t theL1JetCorrection;
 
-	void MyInit();
+
+	void InitL1Menu(TString menuFile);
 	void FilL1Bits();
 	
 	L1Analysis::L1AnalysisDataFormat myEvt_;
@@ -347,6 +363,9 @@ class L1Menu2015 : public L1Ntuple {
 	   float quadTh;
 	   float etaCut;
 	   int minQual;
+		float bandwidth;
+		int  scalable;
+		bool locked;
 	} trigPar;
 	
 	std::map<std::string, trigPar> trigParList;
@@ -359,10 +378,11 @@ class L1Menu2015 : public L1Ntuple {
 	Int_t L1BitNumber(std::string l1name);
 
 	Bool_t EvalMenu(double lumiWeight);
-	void EvalThresh(double lumiWeight);
+	void EvalThresh(Int_t calcThreshold, double lumiWeight);
 
 // -- Cross
 	Bool_t Mu_EG(Float_t mucut, Float_t EGcut, Int_t minMuQual = 4 );
+	Bool_t EG_Mu(Float_t EGcut, Float_t mucut, Int_t minMuQual = 4 );
 	Bool_t MuOpen_EG(Float_t mucut, Float_t EGcut );
 	Bool_t Mu_JetCentral(Float_t mucut, Float_t jetcut );
 	Bool_t Mu_DoubleJetCentral(Float_t mucut, Float_t jetcut );
@@ -435,7 +455,7 @@ class L1Menu2015 : public L1Ntuple {
 	Bool_t DoubleMuXOpen(Float_t ptcut);	// on top of SingleMu7
 	Bool_t Onia(Float_t ptcut1, Float_t ptcut2, Float_t etacut, Int_t delta);   
 
-	void Loop(Bool_t calcThreshold, Bool_t useL1Extra, TString lsRunFile, const int n_events_=-1);
+	void Loop(Int_t calcThreshold, Bool_t useL1Extra, TString lsRunFile, TString L1MenuFile, const int n_events_=-1);
 	void fillDataStructure(Bool_t UseL1Extra=true);
 
 	private :
@@ -713,657 +733,55 @@ void L1Menu2015::FilL1Bits() {
 	//printf("\n");
 }       
 
-void L1Menu2015::MyInit() {
+
+void L1Menu2015::InitL1Menu(TString menuFile) {
+
+//=================================================================================
+//   Read in the menu from file.  
+// 
+//   Format:
+//	  - Each algorithm has a single line with the following information
+//	  
+//	  name(string)  bitNumber(int)  prescale(int)  Primary Threshold(float)  Secondary Threshold(float) Tertiary Theshold(float) 4th Threshold(float)   etaCut(float)   minMuQual(int)  target Bandwidth(float) fixed Bandwidth(int)  
+//	  
+//
+//   Notes:
+//	  - For each algorithm in the file there must be a corresponding call in the EvalMenu routine.
+//	  - If the prescale is set to -1, the algorithm will not be run.
+//	  
+//===================================================================================
 
 
-	NBITS_TRIGS=0;
 
-// ---- The bit std::mapping
-//  Note: These are just for labeling purposes...they are not used for any array indexing in the code.
+
+// Open File
+   printf("\n===================  L1Menu2015:  Reading L1 Menu File %s =============================\n",menuFile.Data());
+   ifstream ifs( menuFile );  
 	
-	BitMapping["L1_ZeroBias"] = 0 ;
+// Read through Menu
+   while(ifs) {
 	
-	BitMapping["L1_SingleEG"] =  10;
-	BitMapping["L1_SingleIsoEG"] =  11;
-	BitMapping["L1_DoubleEG"] = 12 ;
-
-	BitMapping["L1_SingleMu"] =  20;
-	BitMapping["L1_DoubleMu"] =  21;
-	
-	BitMapping["L1_EG_Mu"] =  60;
-	BitMapping["L1_Mu_EG"] =  61;
-	BitMapping["L1_EG_Tau"]=  62;
-	BitMapping["L1_Mu_Tau"]=  63;
-
-	BitMapping["L1_SingleTau"] = 30 ;
-	BitMapping["L1_DoubleTau"] = 31 ;
-	
-	BitMapping["L1_SingleJet"] = 40 ;
-	BitMapping["L1_DoubleJet"] = 41 ;
-	BitMapping["L1_QuadJetC"] =   42;
-	
-	BitMapping["L1_ETM"] =  50 ;	
-	BitMapping["L1_HTT"] =  51 ;
-	BitMapping["L1_HTT_ETM"]=52;
-
-	BitMapping["L1_SingleMu_ETM"]  = 70 ;
-	BitMapping["L1_SingleEG_ETM"]  = 71 ;
-	BitMapping["L1_SingleMu_CJet"] = 72 ;
-	BitMapping["L1_SingleEG_CJet"] = 73 ;
-	BitMapping["L1_SingleTau_CJet"]= 74 ;
-	BitMapping["L1_SingleTau_ETM"] = 75 ;
-	BitMapping["L1_SingleCJet_ETM"]= 76 ;
-	BitMapping["L1_DoubleCJet_ETM"]= 77 ;
-
-//  DEFINE THE DEFAULT PARAMETERS (Can Override below)
-
-// Define Trigger Parameters (Default 7E33 Menu)
-	trigParList["L1_SingleEG"].primTh   = 22.;
-	trigParList["L1_SingleEG"].secTh    = -1.;
-	trigParList["L1_SingleEG"].triTh    = -1.;
-	trigParList["L1_SingleEG"].quadTh   = -1.;
-	trigParList["L1_SingleEG"].etaCut   = -1.;
-	trigParList["L1_SingleEG"].minQual  = -1.;
-
-	trigParList["L1_SingleIsoEG"].primTh   = 18.;
-	trigParList["L1_SingleIsoEG"].secTh    = -1.;
-	trigParList["L1_SingleIsoEG"].triTh    = -1.;
-	trigParList["L1_SingleIsoEG"].quadTh   = -1.;
-	trigParList["L1_SingleIsoEG"].etaCut   =  4.5; //corresponds to eta<2.17  
-	trigParList["L1_SingleIsoEG"].minQual  = -1.;
-
-	trigParList["L1_DoubleEG"].primTh   = 13.;
-	trigParList["L1_DoubleEG"].secTh    =  7.;
-	trigParList["L1_DoubleEG"].triTh    = -1.;
-	trigParList["L1_DoubleEG"].quadTh   = -1.;
-	trigParList["L1_DoubleEG"].etaCut   = -1.;
-	trigParList["L1_DoubleEG"].minQual  = -1.;
-
-	trigParList["L1_SingleEG_ETM"].primTh   = 20.;
-	trigParList["L1_SingleEG_ETM"].secTh    = 20.;
-	trigParList["L1_SingleEG_ETM"].triTh    = -1.;
-	trigParList["L1_SingleEG_ETM"].quadTh   = -1.;
-	trigParList["L1_SingleEG_ETM"].etaCut   = -1.;
-	trigParList["L1_SingleEG_ETM"].minQual  = -1.;	  
-
-	trigParList["L1_SingleEG_CJet"].primTh   = 20.;
-	trigParList["L1_SingleEG_CJet"].secTh    = 32.;
-	trigParList["L1_SingleEG_CJet"].triTh    = -1.;
-	trigParList["L1_SingleEG_CJet"].quadTh   = -1.;
-	trigParList["L1_SingleEG_CJet"].etaCut   = -1.;
-	trigParList["L1_SingleEG_CJet"].minQual  = -1.;	  	 
-
-	trigParList["L1_SingleMu"].primTh   = 16.;
-	trigParList["L1_SingleMu"].secTh    = -1.;
-	trigParList["L1_SingleMu"].triTh    = -1.;
-	trigParList["L1_SingleMu"].quadTh   = -1.;
-	trigParList["L1_SingleMu"].etaCut   =  2.1;
-	trigParList["L1_SingleMu"].minQual  =  5;
-
-	trigParList["L1_DoubleMu"].primTh   = 10.;
-	trigParList["L1_DoubleMu"].secTh    =  0.;
-	trigParList["L1_DoubleMu"].triTh    = -1.;
-	trigParList["L1_DoubleMu"].quadTh   = -1.;
-	trigParList["L1_DoubleMu"].etaCut   =  5.0;
-	trigParList["L1_DoubleMu"].minQual  =  5;
-
-	trigParList["L1_SingleMu_ETM"].primTh   = 20.;
-	trigParList["L1_SingleMu_ETM"].secTh    = 20.;
-	trigParList["L1_SingleMu_ETM"].triTh    = -1.;
-	trigParList["L1_SingleMu_ETM"].quadTh   = -1.;
-	trigParList["L1_SingleMu_ETM"].etaCut   =  2.1;
-	trigParList["L1_SingleMu_ETM"].minQual  =  5;	  
-
-	trigParList["L1_SingleMu_CJet"].primTh   = 20.;
-	trigParList["L1_SingleMu_CJet"].secTh    = 32.;
-	trigParList["L1_SingleMu_CJet"].triTh    = -1.;
-	trigParList["L1_SingleMu_CJet"].quadTh   = -1.;
-	trigParList["L1_SingleMu_CJet"].etaCut   =  2.1;
-	trigParList["L1_SingleMu_CJet"].minQual  =  5;	
-
-	trigParList["L1_EG_Mu"].primTh   = 3.5; //First threshold is on muon
-	trigParList["L1_EG_Mu"].secTh    = 12.; //Second threshol is on EG
-	trigParList["L1_EG_Mu"].triTh    = -1.;
-	trigParList["L1_EG_Mu"].quadTh   = -1.;
-	trigParList["L1_EG_Mu"].etaCut   =  5.0; //No meaning currently
-	trigParList["L1_EG_Mu"].minQual  =  5;
-
-	trigParList["L1_Mu_EG"].primTh   = 12.; //First threshold is on muon
-	trigParList["L1_Mu_EG"].secTh    =  7.; //Second threshol is on EG
-	trigParList["L1_Mu_EG"].triTh    = -1.;
-	trigParList["L1_Mu_EG"].quadTh   = -1.;
-	trigParList["L1_Mu_EG"].etaCut   =  5.0;
-	trigParList["L1_Mu_EG"].minQual  =  5;
-
-	trigParList["L1_EG_Tau"].primTh   = 22.; //First threshold is on EG
-	trigParList["L1_EG_Tau"].secTh    = 20.; //Second threshol is on Tau
-	trigParList["L1_EG_Tau"].triTh    = -1.;
-	trigParList["L1_EG_Tau"].quadTh   = -1.;
-	trigParList["L1_EG_Tau"].etaCut   = -1.; //No meaning currently
-	trigParList["L1_EG_Tau"].minQual  = -1.;
-
-	trigParList["L1_Mu_Tau"].primTh   = 17.; //First threshold is on muon
-	trigParList["L1_Mu_Tau"].secTh    = 20.; //Second threshol is on Tau
-	trigParList["L1_Mu_Tau"].triTh    = -1.;
-	trigParList["L1_Mu_Tau"].quadTh   = -1.;
-	trigParList["L1_Mu_Tau"].etaCut   =  2.1;
-	trigParList["L1_Mu_Tau"].minQual  =  5;
-
-	trigParList["L1_SingleTau"].primTh   = 30.;
-	trigParList["L1_SingleTau"].secTh    = -1.;
-	trigParList["L1_SingleTau"].triTh    = -1.;
-	trigParList["L1_SingleTau"].quadTh   = -1.;
-	trigParList["L1_SingleTau"].etaCut   = -1.;
-	trigParList["L1_SingleTau"].minQual  = -1.;
-
-	trigParList["L1_DoubleTau"].primTh   = 44.;
-	trigParList["L1_DoubleTau"].secTh    = 44.;
-	trigParList["L1_DoubleTau"].triTh    = -1.;
-	trigParList["L1_DoubleTau"].quadTh   = -1.;
-	trigParList["L1_DoubleTau"].etaCut   =  4.5; //corresponds to eta<2.17 
-	trigParList["L1_DoubleTau"].minQual  = -1.;
-
-	trigParList["L1_SingleTau_ETM"].primTh   = 40.;
-	trigParList["L1_SingleTau_ETM"].secTh    = 20.;
-	trigParList["L1_SingleTau_ETM"].triTh    = -1.;
-	trigParList["L1_SingleTau_ETM"].quadTh   = -1.;
-	trigParList["L1_SingleTau_ETM"].etaCut   = 4.5;
-	trigParList["L1_SingleTau_ETM"].minQual  = -1.;	  
-
-	trigParList["L1_SingleTau_CJet"].primTh   = 40.;
-	trigParList["L1_SingleTau_CJet"].secTh    = 32.;
-	trigParList["L1_SingleTau_CJet"].triTh    = -1.;
-	trigParList["L1_SingleTau_CJet"].quadTh   = -1.;
-	trigParList["L1_SingleTau_CJet"].etaCut   = 4.5;
-	trigParList["L1_SingleTau_CJet"].minQual  = -1.;	  	
-
-	trigParList["L1_SingleJet"].primTh   = 128.;
-	trigParList["L1_SingleJet"].secTh    = -1.;
-	trigParList["L1_SingleJet"].triTh    = -1.;
-	trigParList["L1_SingleJet"].quadTh   = -1.;
-	trigParList["L1_SingleJet"].etaCut   = -1.;
-	trigParList["L1_SingleJet"].minQual  = -1.;
-
-	trigParList["L1_DoubleJet"].primTh   = 56.;
-	trigParList["L1_DoubleJet"].secTh    = 56.;
-	trigParList["L1_DoubleJet"].triTh    = -1.;
-	trigParList["L1_DoubleJet"].quadTh   = -1.;
-	trigParList["L1_DoubleJet"].etaCut   = -1.;  //note this is implemented with Central Jets only
-	trigParList["L1_DoubleJet"].minQual  = -1.;
-
-
-	trigParList["L1_QuadJetC"].primTh   = 36.;
-	trigParList["L1_QuadJetC"].secTh    = 36.;
-	trigParList["L1_QuadJetC"].triTh    = 36.;
-	trigParList["L1_QuadJetC"].quadTh   = 36.;
-	trigParList["L1_QuadJetC"].etaCut   = -1.;
-	trigParList["L1_QuadJetC"].minQual  = -1.;
-
-	trigParList["L1_ETM"].primTh   = 36.;
-	trigParList["L1_ETM"].secTh    = -1.;
-	trigParList["L1_ETM"].triTh    = -1.;
-	trigParList["L1_ETM"].quadTh   = -1.;
-	trigParList["L1_ETM"].etaCut   = -1.;
-	trigParList["L1_ETM"].minQual  = -1.;	
-
-	trigParList["L1_SingleCJet_ETM"].primTh   = 60.;
-	trigParList["L1_SingleCJet_ETM"].secTh    = 20.;
-	trigParList["L1_SingleCJet_ETM"].triTh    = -1.;
-	trigParList["L1_SingleCJet_ETM"].quadTh   = -1.;
-	trigParList["L1_SingleCJet_ETM"].etaCut   = 4.5; //corresponds to eta<2.17
-	trigParList["L1_SingleCJet_ETM"].minQual  = -1.;	
-
-	trigParList["L1_DoubleCJet_ETM"].primTh   = 36.;
-	trigParList["L1_DoubleCJet_ETM"].secTh    = 36.;
-	trigParList["L1_DoubleCJet_ETM"].triTh    = 30.;
-	trigParList["L1_DoubleCJet_ETM"].quadTh   = -1.;
-	trigParList["L1_DoubleCJet_ETM"].etaCut   = 4.5; //corresponds to eta<2.17
-	trigParList["L1_DoubleCJet_ETM"].minQual  = -1.;	
-
-	trigParList["L1_HTT"].primTh   =150.;
-	trigParList["L1_HTT"].secTh    = -1.;
-	trigParList["L1_HTT"].triTh    = -1.;
-	trigParList["L1_HTT"].quadTh   = -1.;
-	trigParList["L1_HTT"].etaCut   = -1.;
-	trigParList["L1_HTT"].minQual  = -1.;
-
-	trigParList["L1_HTT_ETM"].primTh   = 75.;
-	trigParList["L1_HTT_ETM"].secTh    = 50.;
-	trigParList["L1_HTT_ETM"].triTh    = -1.;
-	trigParList["L1_HTT_ETM"].quadTh   = -1.;
-	trigParList["L1_HTT_ETM"].etaCut   = -1.;
-	trigParList["L1_HTT_ETM"].minQual  = -1.;
-
-
-
-// Set Prescales
-	Prescales["L1_ZeroBias"] = 1 ;
-
-	Prescales["L1_SingleEG"] =  1;
-	Prescales["L1_SingleIsoEG"] =  1;
-	Prescales["L1_DoubleEG"] = 1 ;
-
-	Prescales["L1_SingleMu"] =  1;
-	Prescales["L1_DoubleMu"] =  1;
-
-	Prescales["L1_EG_Mu"] =  1;
-	Prescales["L1_Mu_EG"] =  1;
-	Prescales["L1_EG_Tau"] =  1;
-	Prescales["L1_Mu_Tau"] =  1;
-
-	Prescales["L1_SingleTau"] = 1 ;
-	Prescales["L1_DoubleTau"] = 1 ;
-
-	Prescales["L1_SingleJet"] = 1 ;
-	Prescales["L1_DoubleJet"] = 1 ;
-	Prescales["L1_QuadJetC"] =   1;
-
-	Prescales["L1_ETM"] =  1 ;
-	Prescales["L1_HTT"] =  1 ;
-	Prescales["L1_HTT_ETM"] =  1 ;
-
-	Prescales["L1_SingleMu_ETM"]   = 1 ;
-	Prescales["L1_SingleEG_ETM"]   = 1 ;
-	Prescales["L1_SingleTau_ETM"]  = 1 ;
-	Prescales["L1_SingleMu_CJet"]  = 1 ;
-	Prescales["L1_SingleEG_CJet"]  = 1 ;
-	Prescales["L1_SingleTau_CJet"] = 1 ;
-	Prescales["L1_SingleCJet_ETM"]       = 1 ;
-	Prescales["L1_DoubleCJet_ETM"] = 1 ;
-
-
-	if (theL1Menu == 1) {  //Override default choices
-
-// Define Trigger Parameters (Menu v1)
-	  trigParList["L1_SingleEG"].primTh      = 39.;
-
-	  trigParList["L1_SingleIsoEG"].primTh   = 29.;
-
-	  trigParList["L1_DoubleEG"].primTh      = 20.;
-	  trigParList["L1_DoubleEG"].secTh       =(7./13.)*trigParList["L1_DoubleEG"].primTh;
+	  TString algName;
+	  ifs >> algName;
 	  
-	  trigParList["L1_SingleEG_ETM"].primTh  = 20.;
-	  trigParList["L1_SingleEG_ETM"].secTh   = 20.;
-
-	  trigParList["L1_SingleEG_CJet"].primTh = 20.;
-	  trigParList["L1_SingleEG_CJet"].secTh  = 32.;
-
-	  trigParList["L1_SingleMu"].primTh      = 35.;
-
-	  trigParList["L1_DoubleMu"].primTh      = 26.;
-	  trigParList["L1_DoubleMu"].secTh       =(0./10.)*trigParList["L1_DoubleMu"].primTh;
+	  ifs >> BitMapping[algName.Data()];	  
+	  ifs >> Prescales[algName.Data()];
 	  
-	  trigParList["L1_SingleMu_ETM"].primTh  = 20.;
-	  trigParList["L1_SingleMu_ETM"].secTh   = 20.;
-
-	  trigParList["L1_SingleMu_CJet"].primTh = 20.;
-	  trigParList["L1_SingleMu_CJet"].secTh  = 32.;
-
-	  trigParList["L1_EG_Mu"].secTh          = 20.; //Second threshol is on EG
-	  trigParList["L1_EG_Mu"].primTh         =(3.5/12.)*trigParList["L1_EG_Mu"].secTh; //First threshold is on muon
-
-	  trigParList["L1_Mu_EG"].primTh         = 21.; //First threshold is on muon
-	  trigParList["L1_Mu_EG"].secTh          =(7./12.)*trigParList["L1_Mu_EG"].primTh; //Second threshol is on EG
-
-	  trigParList["L1_SingleTau"].primTh     = 30.;
-
-	  trigParList["L1_DoubleTau"].primTh     = 56.;
-	  trigParList["L1_DoubleTau"].secTh      =(44./44.)*trigParList["L1_DoubleTau"].primTh;
+	  ifs >> trigParList[algName.Data()].primTh;
+	  ifs >> trigParList[algName.Data()].secTh;
+	  ifs >> trigParList[algName.Data()].triTh;
+	  ifs >> trigParList[algName.Data()].quadTh;
+	  ifs >> trigParList[algName.Data()].etaCut;
+	  ifs >> trigParList[algName.Data()].minQual;
+	  ifs >> trigParList[algName.Data()].bandwidth;
+	  ifs >> trigParList[algName.Data()].scalable;
+	  ifs >> trigParList[algName.Data()].locked;
 	  
-	  trigParList["L1_SingleJet"].primTh     = 184.;
-
-	  trigParList["L1_DoubleJet"].primTh     = 124.;
-	  trigParList["L1_DoubleJet"].secTh      =(56./56.)*trigParList["L1_DoubleJet"].primTh;
-
-	  trigParList["L1_QuadJetC"].primTh      = 96.;
-	  trigParList["L1_QuadJetC"].secTh       =(36./36.)*trigParList["L1_QuadJetC"].primTh;
-	  trigParList["L1_QuadJetC"].triTh       =(36./36.)*trigParList["L1_QuadJetC"].primTh;
-	  trigParList["L1_QuadJetC"].quadTh      =(36./36.)*trigParList["L1_QuadJetC"].primTh;
-	  
-	  trigParList["L1_ETM"].primTh           = 81.;
-	  trigParList["L1_HTT"].primTh           =436.;
-	  
-	} else if (theL1Menu == 2) {  //Override default choices// Thresholds defined by 8 TeV HPF 66 PU: Initial Choice (Scale 1.)
-
-// Define Trigger Parameters (Menu v1)
-	  trigParList["L1_SingleEG"].primTh      = 36.;
-
-	  trigParList["L1_SingleIsoEG"].primTh   = 28.;
-
-	  trigParList["L1_DoubleEG"].primTh      = 19.;
-	  trigParList["L1_DoubleEG"].secTh       =(7./13.)*trigParList["L1_DoubleEG"].primTh;
-	  
-	  trigParList["L1_SingleEG_ETM"].primTh  = 20.;
-	  trigParList["L1_SingleEG_ETM"].secTh   = 20.;
-
-	  trigParList["L1_SingleEG_CJet"].primTh = 20.;
-	  trigParList["L1_SingleEG_CJet"].secTh  = 32.;
-
-	  trigParList["L1_SingleMu"].primTh      = 20.;
-
-	  trigParList["L1_DoubleMu"].primTh      = 13.;
-	  trigParList["L1_DoubleMu"].secTh       =(0./10.)*trigParList["L1_DoubleMu"].primTh;
-	  
-	  trigParList["L1_SingleMu_ETM"].primTh  = 20.;
-	  trigParList["L1_SingleMu_ETM"].secTh   = 20.;
-
-	  trigParList["L1_SingleMu_CJet"].primTh = 20.;
-	  trigParList["L1_SingleMu_CJet"].secTh  = 32.;
-
-	  trigParList["L1_EG_Mu"].secTh          = 16.; //Second threshol is on EG
-	  trigParList["L1_EG_Mu"].primTh         =(3.5/12.)*trigParList["L1_EG_Mu"].secTh; //First threshold is on muon
-
-	  trigParList["L1_Mu_EG"].primTh         = 15.; //First threshold is on muon
-	  trigParList["L1_Mu_EG"].secTh          =(7./12.)*trigParList["L1_Mu_EG"].primTh; //Second threshol is on EG
-
-	  trigParList["L1_SingleTau"].primTh     = 30.;
-
-	  trigParList["L1_DoubleTau"].primTh     = 48.;
-	  trigParList["L1_DoubleTau"].secTh      =(44./44.)*trigParList["L1_DoubleTau"].primTh;
-	  
-	  trigParList["L1_SingleJet"].primTh     = 192.;
-
-	  trigParList["L1_DoubleJet"].primTh     = 88.;
-	  trigParList["L1_DoubleJet"].secTh      =(56./56.)*trigParList["L1_DoubleJet"].primTh;
-
-	  trigParList["L1_QuadJetC"].primTh      = 61.;
-	  trigParList["L1_QuadJetC"].secTh       =(36./36.)*trigParList["L1_QuadJetC"].primTh;
-	  trigParList["L1_QuadJetC"].triTh       =(36./36.)*trigParList["L1_QuadJetC"].primTh;
-	  trigParList["L1_QuadJetC"].quadTh      =(36./36.)*trigParList["L1_QuadJetC"].primTh;
-	  
-	  trigParList["L1_ETM"].primTh           = 58.;
-	  trigParList["L1_HTT"].primTh           =555.;
-
-	} else if (theL1Menu == 3) {  //Override default choices// Thresholds defined by 8 TeV HPF 66 PU: Scaled Choice (Scale 1.75 )
-
-// Define Trigger Parameters (Menu v1)
-	  trigParList["L1_SingleEG"].primTh      = 29.;
-
-	  trigParList["L1_SingleIsoEG"].primTh   = 23.;
-
-	  trigParList["L1_DoubleEG"].primTh      = 17.;
-	  trigParList["L1_DoubleEG"].secTh       =(7./13.)*trigParList["L1_DoubleEG"].primTh;
-
-	  trigParList["L1_SingleMu"].primTh      = 15.;
-
-	  trigParList["L1_DoubleMu"].primTh      = 10.;
-	  trigParList["L1_DoubleMu"].secTh       =(0./10.)*trigParList["L1_DoubleMu"].primTh;
-
-	  trigParList["L1_EG_Mu"].secTh          = 15.; //Second threshol is on EG
-	  trigParList["L1_EG_Mu"].primTh         =(3.5/12.)*trigParList["L1_EG_Mu"].secTh; //First threshold is on muon
-
-	  trigParList["L1_Mu_EG"].primTh         = 13.; //First threshold is on muon
-	  trigParList["L1_Mu_EG"].secTh          =(7./12.)*trigParList["L1_Mu_EG"].primTh; //Second threshol is on EG
-
-	  trigParList["L1_DoubleTau"].primTh     = 48.;
-	  trigParList["L1_DoubleTau"].secTh      =(44./44.)*trigParList["L1_DoubleTau"].primTh;
-	  
-	  trigParList["L1_SingleJet"].primTh     = 164.;
-
-	  trigParList["L1_DoubleJet"].primTh     = 80.;
-	  trigParList["L1_DoubleJet"].secTh      =(56./56.)*trigParList["L1_DoubleJet"].primTh;
-
-	  trigParList["L1_QuadJetC"].primTh      = 60.;
-	  trigParList["L1_QuadJetC"].secTh       =(36./36.)*trigParList["L1_QuadJetC"].primTh;
-	  trigParList["L1_QuadJetC"].triTh       =(36./36.)*trigParList["L1_QuadJetC"].primTh;
-	  trigParList["L1_QuadJetC"].quadTh      =(36./36.)*trigParList["L1_QuadJetC"].primTh;
-	  
-	  trigParList["L1_ETM"].primTh           = 54.;
-	  trigParList["L1_HTT"].primTh           =515.;
-
-
-	} else if (theL1Menu == 4) {  //Override default choices// Thresholds defined by 8 TeV HPF 45 PU: Initial Choice (Scale 1.0)
-
-// Define Trigger Parameters (Menu v1)
-	  trigParList["L1_SingleEG"].primTh      = 34.;
-
-	  trigParList["L1_SingleIsoEG"].primTh   = 27.;
-
-	  trigParList["L1_DoubleEG"].primTh      = 19.;
-	  trigParList["L1_DoubleEG"].secTh       =(7./13.)*trigParList["L1_DoubleEG"].primTh;
-	  
-	  trigParList["L1_SingleEG_ETM"].primTh  = 20.;
-	  trigParList["L1_SingleEG_ETM"].secTh   = 20.;
-
-	  trigParList["L1_SingleEG_CJet"].primTh = 20.;
-	  trigParList["L1_SingleEG_CJet"].secTh  = 32.;
-
-	  trigParList["L1_SingleMu"].primTh      = 21.;
-
-	  trigParList["L1_DoubleMu"].primTh      = 13.;
-	  trigParList["L1_DoubleMu"].secTh       =(0./10.)*trigParList["L1_DoubleMu"].primTh;
-	  
-	  trigParList["L1_SingleMu_ETM"].primTh  = 20.;
-	  trigParList["L1_SingleMu_ETM"].secTh   = 20.;
-
-	  trigParList["L1_SingleMu_CJet"].primTh = 20.;
-	  trigParList["L1_SingleMu_CJet"].secTh  = 32.;
-
-	  trigParList["L1_EG_Mu"].secTh          = 17.; //Second threshol is on EG
-	  trigParList["L1_EG_Mu"].primTh         =(3.5/12.)*trigParList["L1_EG_Mu"].secTh; //First threshold is on muon
-
-	  trigParList["L1_Mu_EG"].primTh         = 14.; //First threshold is on muon
-	  trigParList["L1_Mu_EG"].secTh          =(7./12.)*trigParList["L1_Mu_EG"].primTh; //Second threshol is on EG
-
-	  trigParList["L1_SingleTau"].primTh     = 30.;
-
-	  trigParList["L1_DoubleTau"].primTh     = 52.;
-	  trigParList["L1_DoubleTau"].secTh      =(44./44.)*trigParList["L1_DoubleTau"].primTh;
-	  
-	  trigParList["L1_SingleJet"].primTh     = 164.;
-
-	  trigParList["L1_DoubleJet"].primTh     = 84.;
-	  trigParList["L1_DoubleJet"].secTh      =(56./56.)*trigParList["L1_DoubleJet"].primTh;
-
-	  trigParList["L1_QuadJetC"].primTh      = 48.;
-	  trigParList["L1_QuadJetC"].secTh       =(36./36.)*trigParList["L1_QuadJetC"].primTh;
-	  trigParList["L1_QuadJetC"].triTh       =(36./36.)*trigParList["L1_QuadJetC"].primTh;
-	  trigParList["L1_QuadJetC"].quadTh      =(36./36.)*trigParList["L1_QuadJetC"].primTh;
-	  
-	  trigParList["L1_ETM"].primTh           = 51.;
-	  trigParList["L1_HTT"].primTh           =335.;
-
-	} else if (theL1Menu == 5) {  //Override default choices// Thresholds defined by 8 TeV HPF 45 PU: Scaled Choice (Scale 1.7) 
-
-// Define Trigger Parameters (Menu v1)
-	  trigParList["L1_SingleEG"].primTh      = 29.;
-
-	  trigParList["L1_SingleIsoEG"].primTh   = 23.;
-
-	  trigParList["L1_DoubleEG"].primTh      = 17.;
-	  trigParList["L1_DoubleEG"].secTh       =(7./13.)*trigParList["L1_DoubleEG"].primTh;
-	  
-	  trigParList["L1_SingleMu"].primTh      = 17.;
-
-	  trigParList["L1_DoubleMu"].primTh      = 10.;
-	  trigParList["L1_DoubleMu"].secTh       =(0./10.)*trigParList["L1_DoubleMu"].primTh;
-
-	  trigParList["L1_EG_Mu"].secTh          = 15.; //Second threshol is on EG
-	  trigParList["L1_EG_Mu"].primTh         =(3.5/12.)*trigParList["L1_EG_Mu"].secTh; //First threshold is on muon
-
-	  trigParList["L1_Mu_EG"].primTh         = 13.; //First threshold is on muon
-	  trigParList["L1_Mu_EG"].secTh          =(7./12.)*trigParList["L1_Mu_EG"].primTh; //Second threshol is on EG
-
-	  trigParList["L1_DoubleTau"].primTh     = 48.;
-	  trigParList["L1_DoubleTau"].secTh      =(44./44.)*trigParList["L1_DoubleTau"].primTh;
-	  
-	  trigParList["L1_SingleJet"].primTh     = 152.;
-
-	  trigParList["L1_DoubleJet"].primTh     = 76.;
-	  trigParList["L1_DoubleJet"].secTh      =(56./56.)*trigParList["L1_DoubleJet"].primTh;
-
-	  trigParList["L1_QuadJetC"].primTh      = 48.;
-	  trigParList["L1_QuadJetC"].secTh       =(36./36.)*trigParList["L1_QuadJetC"].primTh;
-	  trigParList["L1_QuadJetC"].triTh       =(36./36.)*trigParList["L1_QuadJetC"].primTh;
-	  trigParList["L1_QuadJetC"].quadTh      =(36./36.)*trigParList["L1_QuadJetC"].primTh;
-	  
-	  trigParList["L1_ETM"].primTh           = 47.;
-	  trigParList["L1_HTT"].primTh           =306.;	  	  
-
-	} else if (theL1Menu == 6) {  //Menu v2 (Keep single lepton fixed) 66 PU Scale 0.75
-
-// Define Trigger Parameters (Menu v2)
-//	  trigParList["L1_SingleEG"].primTh      = 22.;
-
-//	  trigParList["L1_SingleIsoEG"].primTh   = 18.;
-
-	  trigParList["L1_DoubleEG"].primTh      = 20.;
-	  trigParList["L1_DoubleEG"].secTh       =(7./13.)*trigParList["L1_DoubleEG"].primTh;
-
-//	  trigParList["L1_SingleMu"].primTh      = 16.;
-
-	  trigParList["L1_DoubleMu"].primTh      = 14.;
-	  trigParList["L1_DoubleMu"].secTh       =(0./10.)*trigParList["L1_DoubleMu"].primTh;
-
-	  trigParList["L1_EG_Mu"].secTh          = 17.; //Second threshol is on EG
-	  trigParList["L1_EG_Mu"].primTh         =(3.5/12.)*trigParList["L1_EG_Mu"].secTh; //First threshold is on muon
-
-	  trigParList["L1_Mu_EG"].primTh         = 16.; //First threshold is on muon
-	  trigParList["L1_Mu_EG"].secTh          =(7./12.)*trigParList["L1_Mu_EG"].primTh; //Second threshol is on EG
-
-	  trigParList["L1_DoubleTau"].primTh     = 52.;
-	  trigParList["L1_DoubleTau"].secTh      =(44./44.)*trigParList["L1_DoubleTau"].primTh;
-	  
-	  trigParList["L1_SingleJet"].primTh     = 200.;
-
-	  trigParList["L1_DoubleJet"].primTh     = 96.;
-	  trigParList["L1_DoubleJet"].secTh      =(56./56.)*trigParList["L1_DoubleJet"].primTh;
-
-	  trigParList["L1_QuadJetC"].primTh      = 64.;
-	  trigParList["L1_QuadJetC"].secTh       =(36./36.)*trigParList["L1_QuadJetC"].primTh;
-	  trigParList["L1_QuadJetC"].triTh       =(36./36.)*trigParList["L1_QuadJetC"].primTh;
-	  trigParList["L1_QuadJetC"].quadTh      =(36./36.)*trigParList["L1_QuadJetC"].primTh;
-	  
-	  trigParList["L1_ETM"].primTh           = 61.;
-	  trigParList["L1_HTT"].primTh           =567.;	  	  
-
-	} else if (theL1Menu == 7) {  //Menu v2 (Keep single lepton fixed) 45 PU  Scale 0.85
-
-// Define Trigger Parameters (Menu v2)
-//	  trigParList["L1_SingleEG"].primTh      = 22.;
-
-//	  trigParList["L1_SingleIsoEG"].primTh   = 18.;
-
-	  trigParList["L1_DoubleEG"].primTh      = 20.;
-	  trigParList["L1_DoubleEG"].secTh       =(7./13.)*trigParList["L1_DoubleEG"].primTh;
-
-//	  trigParList["L1_SingleMu"].primTh      = 16.;
-
-	  trigParList["L1_DoubleMu"].primTh      = 14.;
-	  trigParList["L1_DoubleMu"].secTh       =(0./10.)*trigParList["L1_DoubleMu"].primTh;
-
-	  trigParList["L1_EG_Mu"].secTh          = 17.; //Second threshol is on EG
-	  trigParList["L1_EG_Mu"].primTh         =(3.5/12.)*trigParList["L1_EG_Mu"].secTh; //First threshold is on muon
-
-	  trigParList["L1_Mu_EG"].primTh         = 15.; //First threshold is on muon
-	  trigParList["L1_Mu_EG"].secTh          =(7./12.)*trigParList["L1_Mu_EG"].primTh; //Second threshol is on EG
-
-	  trigParList["L1_DoubleTau"].primTh     = 56.;
-	  trigParList["L1_DoubleTau"].secTh      =(44./44.)*trigParList["L1_DoubleTau"].primTh;
-	  
-	  trigParList["L1_SingleJet"].primTh     = 172.;
-
-	  trigParList["L1_DoubleJet"].primTh     = 88.;
-	  trigParList["L1_DoubleJet"].secTh      =(56./56.)*trigParList["L1_DoubleJet"].primTh;
-
-	  trigParList["L1_QuadJetC"].primTh      = 48.;
-	  trigParList["L1_QuadJetC"].secTh       =(36./36.)*trigParList["L1_QuadJetC"].primTh;
-	  trigParList["L1_QuadJetC"].triTh       =(36./36.)*trigParList["L1_QuadJetC"].primTh;
-	  trigParList["L1_QuadJetC"].quadTh      =(36./36.)*trigParList["L1_QuadJetC"].primTh;
-	  
-	  trigParList["L1_ETM"].primTh           = 53.;
-	  trigParList["L1_HTT"].primTh           =343.;	  	  
-
-	} else if (theL1Menu == 8) {  //Menu v3 (Keep double lepton fixed) 66 PU Scale 0.5
-
-// Define Trigger Parameters (Menu v3)
-	  trigParList["L1_SingleEG"].primTh      = 47.;
-
-	  trigParList["L1_SingleIsoEG"].primTh   = 35.;
-
-//	  trigParList["L1_DoubleEG"].primTh      = 13.;
-//	  trigParList["L1_DoubleEG"].secTh       =(7./13.)*trigParList["L1_DoubleEG"].primTh;
-
-	  trigParList["L1_SingleMu"].primTh      = 41.;
-
-//	  trigParList["L1_DoubleMu"].primTh      = 10.;
-//	  trigParList["L1_DoubleMu"].secTh       =(0./10.)*trigParList["L1_DoubleMu"].primTh;
-
-//	  trigParList["L1_EG_Mu"].secTh          = 12.; //Second threshol is on EG
-//	  trigParList["L1_EG_Mu"].primTh         =(3.5/12.)*trigParList["L1_EG_Mu"].secTh; //First threshold is on muon
-
-//	  trigParList["L1_Mu_EG"].primTh         = 12.; //First threshold is on muon
-//	  trigParList["L1_Mu_EG"].secTh          =(7./12.)*trigParList["L1_Mu_EG"].primTh; //Second threshol is on EG
-
-	  trigParList["L1_DoubleTau"].primTh     = 52.;
-	  trigParList["L1_DoubleTau"].secTh      =(44./44.)*trigParList["L1_DoubleTau"].primTh;
-	  
-	  trigParList["L1_SingleJet"].primTh     = 224.;
-
-	  trigParList["L1_DoubleJet"].primTh     = 104.;
-	  trigParList["L1_DoubleJet"].secTh      =(56./56.)*trigParList["L1_DoubleJet"].primTh;
-
-	  trigParList["L1_QuadJetC"].primTh      = 64.;
-	  trigParList["L1_QuadJetC"].secTh       =(36./36.)*trigParList["L1_QuadJetC"].primTh;
-	  trigParList["L1_QuadJetC"].triTh       =(36./36.)*trigParList["L1_QuadJetC"].primTh;
-	  trigParList["L1_QuadJetC"].quadTh      =(36./36.)*trigParList["L1_QuadJetC"].primTh;
-	  
-	  trigParList["L1_ETM"].primTh           = 64.;
-	  trigParList["L1_HTT"].primTh           =586.;	  	  
-
-	} else if (theL1Menu == 9) {  //Menu v3 (Keep double lepton fixed) 45 PU Scale 0.5
-
-// Define Trigger Parameters (Menu v3)
-	  trigParList["L1_SingleEG"].primTh      = 40.;
-
-	  trigParList["L1_SingleIsoEG"].primTh   = 31.;
-
-//	  trigParList["L1_DoubleEG"].primTh      = 13.;
-//	  trigParList["L1_DoubleEG"].secTh       =(7./13.)*trigParList["L1_DoubleEG"].primTh;
-
-	  trigParList["L1_SingleMu"].primTh      = 41.;
-
-//	  trigParList["L1_DoubleMu"].primTh      = 10.;
-//	  trigParList["L1_DoubleMu"].secTh       =(0./10.)*trigParList["L1_DoubleMu"].primTh;
-
-//	  trigParList["L1_EG_Mu"].secTh          = 12.; //Second threshol is on EG
-//	  trigParList["L1_EG_Mu"].primTh         =(3.5/12.)*trigParList["L1_EG_Mu"].secTh; //First threshold is on muon
-
-//	  trigParList["L1_Mu_EG"].primTh         = 12.; //First threshold is on muon
-//	  trigParList["L1_Mu_EG"].secTh          =(7./12.)*trigParList["L1_Mu_EG"].primTh; //Second threshol is on EG
-
-	  trigParList["L1_DoubleTau"].primTh     = 56.;
-	  trigParList["L1_DoubleTau"].secTh      =(44./44.)*trigParList["L1_DoubleTau"].primTh;
-	  
-	  trigParList["L1_SingleJet"].primTh     = 184.;
-
-	  trigParList["L1_DoubleJet"].primTh     = 96.;
-	  trigParList["L1_DoubleJet"].secTh      =(56./56.)*trigParList["L1_DoubleJet"].primTh;
-
-	  trigParList["L1_QuadJetC"].primTh      = 52.;
-	  trigParList["L1_QuadJetC"].secTh       =(36./36.)*trigParList["L1_QuadJetC"].primTh;
-	  trigParList["L1_QuadJetC"].triTh       =(36./36.)*trigParList["L1_QuadJetC"].primTh;
-	  trigParList["L1_QuadJetC"].quadTh      =(36./36.)*trigParList["L1_QuadJetC"].primTh;
-	  
-	  trigParList["L1_ETM"].primTh           = 56.;
-	  trigParList["L1_HTT"].primTh           =352.;	  	  
+	  printf("Alg: %20s %2i %2i %6.2f %6.2f %6.2f %6.2f %6.2f %2i %6.2f %2i %2i\n",algName.Data(),BitMapping[algName.Data()],Prescales[algName.Data()],
+	         trigParList[algName.Data()].primTh,trigParList[algName.Data()].secTh,trigParList[algName.Data()].triTh,trigParList[algName.Data()].quadTh,
+				trigParList[algName.Data()].etaCut,trigParList[algName.Data()].minQual,trigParList[algName.Data()].bandwidth,trigParList[algName.Data()].scalable,trigParList[algName.Data()].locked);
 	}
-
-
-
-
-
-/*
-// -- test  to see where we stand if we would get rid of all p'ed seeds
-// -- (in 2011 we spent ~ 20% of the rate in monitoring / control p'ed seeds..)
-
-for (std::map<std::string, int>::iterator it=Prescales.begin(); it != Prescales.end(); it++) {
-std::string name = it -> first;
-Int_t p = it -> second;
-if (p > 1 ) Prescales[name] = 0;
-}
-*/
-
+   printf("====================================================================================================\n\n");
 
 for (std::map<std::string, int>::iterator it=Prescales.begin(); it != Prescales.end(); it++) {
 	std::string name = it -> first;
@@ -1372,26 +790,15 @@ for (std::map<std::string, int>::iterator it=Prescales.begin(); it != Prescales.
 }
 
 
-// -- The "Biased" table is only used for the final print-out
-// -- set true for seeds for which the rate estimation is biased by
-// -- the sample (because of the seeds enabled in the high PU run)
-
-// Biased["L1_TripleMu0"] = true;
-// Biased["L1_DoubleMu_10_Open"] = true;
-// Biased["L1_SingleEG5"] = true;
-// Biased["L1_TripleEG7"] = true;
-// Biased["L1_TripleEG_10_7_5"] = true;
-// Biased["L1_SingleJet36"] = true;
-// Biased["L1_DoubleJetC36"] = true;
-// Biased["L1_DoubleJetC44_Eta1p74_WdEta4"] = true;
-// Biased["L1_QuadJetC36"] = true;
-// Biased["L1_QuadJetC40"] = true;
-// Biased["L1_DoubleTauJet44er"] = true;
-// Biased["L1_Mu3p5_DoubleEG5"] = true;
-// Biased["L1_QuadJetC32"] = true;
-// Biased["L1_TripleJet28_Central"] = true;
-
 }
+
+
+
+
+
+
+
+
 
 Bool_t L1Menu2015::SingleMuEta(Float_t ptcut, Float_t etaCut, Int_t qualmin) {
 
@@ -1597,134 +1004,32 @@ Bool_t L1Menu2015::EvalMenu(double lumiWeight) {
 
 	insert_ibin = 0;
 	
-	if(Menu2015==0) {  //Menu v1  Basic single and dilepton cases with a few simple hadronic triggers
-	
 
-	   InsertInMenu("L1_SingleEG",      SingleEG_Eta(trigParList["L1_SingleEG"].primTh,trigParList["L1_SingleEG"].etaCut) );
-	   InsertInMenu("L1_SingleIsoEG",   SingleIsoEG_Eta(trigParList["L1_SingleIsoEG"].primTh,trigParList["L1_SingleIsoEG"].etaCut) );
-	   InsertInMenu("L1_DoubleEG",      DoubleEG(trigParList["L1_DoubleEG"].primTh,trigParList["L1_DoubleEG"].secTh) );
-//	   InsertInMenu("L1_SingleEG_ETM",  EG_ETM(trigParList["L1_SingleEG_ETM"].primTh,trigParList["L1_SingleEG_ETM"].secTh) );
-//	   InsertInMenu("L1_SingleEG_CJet", EG_JetCentral(trigParList["L1_SingleEG_CJet"].primTh,trigParList["L1_SingleEG_CJet"].secTh) );	   
+	if(Prescales["L1_SingleEG"]>0)     InsertInMenu("L1_SingleEG",      SingleEG_Eta(trigParList["L1_SingleEG"].primTh,trigParList["L1_SingleEG"].etaCut) );
+	if(Prescales["L1_SingleIsoEG"]>0)  InsertInMenu("L1_SingleIsoEG",   SingleIsoEG_Eta(trigParList["L1_SingleIsoEG"].primTh,trigParList["L1_SingleIsoEG"].etaCut) );
+	if(Prescales["L1_DoubleEG"]>0)     InsertInMenu("L1_DoubleEG",      DoubleEG(trigParList["L1_DoubleEG"].primTh,trigParList["L1_DoubleEG"].secTh) );
+	if(Prescales["L1_SingleEG_ETM"]>0) InsertInMenu("L1_SingleEG_ETM",  EG_ETM(trigParList["L1_SingleEG_ETM"].primTh,trigParList["L1_SingleEG_ETM"].secTh) );
+	if(Prescales["L1_SingleEG_CJet"]>0)InsertInMenu("L1_SingleEG_CJet", EG_JetCentral(trigParList["L1_SingleEG_CJet"].primTh,trigParList["L1_SingleEG_CJet"].secTh) );	   
 
 
-	   InsertInMenu("L1_SingleMu",      SingleMuEta(trigParList["L1_SingleMu"].primTh,trigParList["L1_SingleMu"].etaCut,trigParList["L1_SingleMu"].minQual));
-	   InsertInMenu("L1_DoubleMu",      DoubleMu(trigParList["L1_DoubleMu"].primTh,trigParList["L1_DoubleMu"].secTh,trigParList["L1_DoubleMu"].minQual));
-//	   InsertInMenu("L1_SingleMu_ETM",  Muer_ETM(trigParList["L1_SingleMu_ETM"].primTh,trigParList["L1_SingleMu_ETM"].secTh,trigParList["L1_SingleMu_ETM"].etaCut, trigParList["L1_SingleMu_ETM"].minQual) );
-//	   InsertInMenu("L1_SingleMu_CJet", Muer_JetCentral(trigParList["L1_SingleMu_CJet"].primTh,trigParList["L1_SingleMu_CJet"].secTh,trigParList["L1_SingleMu_CJet"].etaCut, trigParList["L1_SingleMu_CJet"].minQual) );
-
-	   
-	   InsertInMenu("L1_EG_Mu",         Mu_EG(trigParList["L1_EG_Mu"].primTh,trigParList["L1_EG_Mu"].secTh, trigParList["L1_EG_Mu"].minQual ) );
-	   InsertInMenu("L1_Mu_EG",         Mu_EG(trigParList["L1_Mu_EG"].primTh,trigParList["L1_Mu_EG"].secTh, trigParList["L1_Mu_EG"].minQual) );
-	   
-	   InsertInMenu("L1_SingleJet",     SingleJet(trigParList["L1_SingleJet"].primTh) );
-      InsertInMenu("L1_DoubleJet",     DoubleJetCentral(trigParList["L1_DoubleJet"].primTh,trigParList["L1_DoubleJet"].secTh) );
-	   InsertInMenu("L1_QuadJetC",      QuadJetCentral(trigParList["L1_QuadJetC"].primTh,trigParList["L1_QuadJetC"].secTh,trigParList["L1_QuadJetC"].triTh,trigParList["L1_QuadJetC"].quadTh) );
-//	   InsertInMenu("L1_SingleTau",     SingleTauJet(trigParList["L1_SingleTau"].primTh) );	   	   
-	   InsertInMenu("L1_DoubleTau",     DoubleTauJetEta(trigParList["L1_DoubleTau"].primTh,trigParList["L1_DoubleTau"].secTh,trigParList["L1_DoubleTau"].etaCut) );
-
-	   InsertInMenu("L1_ETM",           ETM(trigParList["L1_ETM"].primTh) );           
-	   InsertInMenu("L1_HTT",           HTT(trigParList["L1_HTT"].primTh) );
-
-	} else if(Menu2015==1){  //Menu v2 (Only single lepton triggers)
+	if(Prescales["L1_SingleMu"]>0)      InsertInMenu("L1_SingleMu",      SingleMuEta(trigParList["L1_SingleMu"].primTh,trigParList["L1_SingleMu"].etaCut,trigParList["L1_SingleMu"].minQual));
+	if(Prescales["L1_DoubleMu"]>0)      InsertInMenu("L1_DoubleMu",      DoubleMu(trigParList["L1_DoubleMu"].primTh,trigParList["L1_DoubleMu"].secTh,trigParList["L1_DoubleMu"].minQual));
+	if(Prescales["L1_SingleMu_ETM"]>0)  InsertInMenu("L1_SingleMu_ETM",  Muer_ETM(trigParList["L1_SingleMu_ETM"].primTh,trigParList["L1_SingleMu_ETM"].secTh,trigParList["L1_SingleMu_ETM"].etaCut, trigParList["L1_SingleMu_ETM"].minQual) );
+	if(Prescales["L1_SingleMu_CJet"]>0) InsertInMenu("L1_SingleMu_CJet", Muer_JetCentral(trigParList["L1_SingleMu_CJet"].primTh,trigParList["L1_SingleMu_CJet"].secTh,trigParList["L1_SingleMu_CJet"].etaCut, trigParList["L1_SingleMu_CJet"].minQual) );
 
 
-	   InsertInMenu("L1_SingleEG",      SingleEG_Eta(trigParList["L1_SingleEG"].primTh,trigParList["L1_SingleEG"].etaCut) );
-	   InsertInMenu("L1_SingleIsoEG",   SingleIsoEG_Eta(trigParList["L1_SingleIsoEG"].primTh,trigParList["L1_SingleIsoEG"].etaCut) );
-//	   InsertInMenu("L1_DoubleEG",      DoubleEG(trigParList["L1_DoubleEG"].primTh,trigParList["L1_DoubleEG"].secTh) );
-//	   InsertInMenu("L1_SingleEG_ETM",  EG_ETM(trigParList["L1_SingleEG_ETM"].primTh,trigParList["L1_SingleEG_ETM"].secTh) );
-//	   InsertInMenu("L1_SingleEG_CJet", EG_JetCentral(trigParList["L1_SingleEG_CJet"].primTh,trigParList["L1_SingleEG_CJet"].secTh) );	   
+	if(Prescales["L1_EG_Mu"]>0) InsertInMenu("L1_EG_Mu",         EG_Mu(trigParList["L1_EG_Mu"].primTh,trigParList["L1_EG_Mu"].secTh, trigParList["L1_EG_Mu"].minQual ) );
+	if(Prescales["L1_Mu_EG"]>0) InsertInMenu("L1_Mu_EG",         Mu_EG(trigParList["L1_Mu_EG"].primTh,trigParList["L1_Mu_EG"].secTh, trigParList["L1_Mu_EG"].minQual) );
 
+	if(Prescales["L1_SingleJet"]>0) InsertInMenu("L1_SingleJet",     SingleJet(trigParList["L1_SingleJet"].primTh) );
+   if(Prescales["L1_DoubleJet"]>0) InsertInMenu("L1_DoubleJet",     DoubleJetCentral(trigParList["L1_DoubleJet"].primTh,trigParList["L1_DoubleJet"].secTh) );
+	if(Prescales["L1_QuadJetC"]>0)  InsertInMenu("L1_QuadJetC",      QuadJetCentral(trigParList["L1_QuadJetC"].primTh,trigParList["L1_QuadJetC"].secTh,trigParList["L1_QuadJetC"].triTh,trigParList["L1_QuadJetC"].quadTh) );
+   if(Prescales["L1_SingleTau"]>0) InsertInMenu("L1_SingleTau",     SingleTauJet(trigParList["L1_SingleTau"].primTh) );	   	   
+	if(Prescales["L1_DoubleTau"]>0) InsertInMenu("L1_DoubleTau",     DoubleTauJetEta(trigParList["L1_DoubleTau"].primTh,trigParList["L1_DoubleTau"].secTh,trigParList["L1_DoubleTau"].etaCut) );
 
-	   InsertInMenu("L1_SingleMu",      SingleMuEta(trigParList["L1_SingleMu"].primTh,trigParList["L1_SingleMu"].etaCut,trigParList["L1_SingleMu"].minQual));
-//	   InsertInMenu("L1_DoubleMu",      DoubleMu(trigParList["L1_DoubleMu"].primTh,trigParList["L1_DoubleMu"].secTh,trigParList["L1_DoubleMu"].minQual));
-//	   InsertInMenu("L1_SingleMu_ETM",  Muer_ETM(trigParList["L1_SingleMu_ETM"].primTh,trigParList["L1_SingleMu_ETM"].secTh,trigParList["L1_SingleMu_ETM"].etaCut, trigParList["L1_SingleMu_ETM"].minQual) );
-//	   InsertInMenu("L1_SingleMu_CJet", Muer_JetCentral(trigParList["L1_SingleMu_CJet"].primTh,trigParList["L1_SingleMu_CJet"].secTh,trigParList["L1_SingleMu_CJet"].etaCut, trigParList["L1_SingleMu_CJet"].minQual) );
+	if(Prescales["L1_ETM"]>0) InsertInMenu("L1_ETM",           ETM(trigParList["L1_ETM"].primTh) );           
+	if(Prescales["L1_HTT"]>0) InsertInMenu("L1_HTT",           HTT(trigParList["L1_HTT"].primTh) );
 
-	   
-//	   InsertInMenu("L1_EG_Mu",         Mu_EG(trigParList["L1_EG_Mu"].primTh,trigParList["L1_EG_Mu"].secTh, trigParList["L1_EG_Mu"].minQual ) );
-//	   InsertInMenu("L1_Mu_EG",         Mu_EG(trigParList["L1_Mu_EG"].primTh,trigParList["L1_Mu_EG"].secTh, trigParList["L1_Mu_EG"].minQual) );
-	   
-//	   InsertInMenu("L1_SingleJet",     SingleJet(trigParList["L1_SingleJet"].primTh) );
-//      InsertInMenu("L1_DoubleJet",     DoubleJetCentral(trigParList["L1_DoubleJet"].primTh,trigParList["L1_DoubleJet"].secTh) );
-//	   InsertInMenu("L1_QuadJetC",      QuadJetCentral(trigParList["L1_QuadJetC"].primTh,trigParList["L1_QuadJetC"].secTh,trigParList["L1_QuadJetC"].triTh,trigParList["L1_QuadJetC"].quadTh) );
-//	   InsertInMenu("L1_SingleTau",     SingleTauJet(trigParList["L1_SingleTau"].primTh) );	   	   
-//	   InsertInMenu("L1_DoubleTau",     DoubleTauJetEta(trigParList["L1_DoubleTau"].primTh,trigParList["L1_DoubleTau"].secTh,trigParList["L1_DoubleTau"].etaCut) );
-
-//	   InsertInMenu("L1_ETM",           ETM(trigParList["L1_ETM"].primTh) );           
-//	   InsertInMenu("L1_HTT",           HTT(trigParList["L1_HTT"].primTh) );
-
-	} else if(Menu2015==2){  //Menu v3 (Only dilepton lepton triggers)
-
-
-//	   InsertInMenu("L1_SingleEG",      SingleEG_Eta(trigParList["L1_SingleEG"].primTh,trigParList["L1_SingleEG"].etaCut) );
-//	   InsertInMenu("L1_SingleIsoEG",   SingleIsoEG_Eta(trigParList["L1_SingleIsoEG"].primTh,trigParList["L1_SingleIsoEG"].etaCut) );
-	   InsertInMenu("L1_DoubleEG",      DoubleEG(trigParList["L1_DoubleEG"].primTh,trigParList["L1_DoubleEG"].secTh) );
-//	   InsertInMenu("L1_SingleEG_ETM",  EG_ETM(trigParList["L1_SingleEG_ETM"].primTh,trigParList["L1_SingleEG_ETM"].secTh) );
-//	   InsertInMenu("L1_SingleEG_CJet", EG_JetCentral(trigParList["L1_SingleEG_CJet"].primTh,trigParList["L1_SingleEG_CJet"].secTh) );	   
-
-
-//	   InsertInMenu("L1_SingleMu",      SingleMuEta(trigParList["L1_SingleMu"].primTh,trigParList["L1_SingleMu"].etaCut,trigParList["L1_SingleMu"].minQual));
-	   InsertInMenu("L1_DoubleMu",      DoubleMu(trigParList["L1_DoubleMu"].primTh,trigParList["L1_DoubleMu"].secTh,trigParList["L1_DoubleMu"].minQual));
-//	   InsertInMenu("L1_SingleMu_ETM",  Muer_ETM(trigParList["L1_SingleMu_ETM"].primTh,trigParList["L1_SingleMu_ETM"].secTh,trigParList["L1_SingleMu_ETM"].etaCut, trigParList["L1_SingleMu_ETM"].minQual) );
-//	   InsertInMenu("L1_SingleMu_CJet", Muer_JetCentral(trigParList["L1_SingleMu_CJet"].primTh,trigParList["L1_SingleMu_CJet"].secTh,trigParList["L1_SingleMu_CJet"].etaCut, trigParList["L1_SingleMu_CJet"].minQual) );
-
-	   
-	   InsertInMenu("L1_EG_Mu",         Mu_EG(trigParList["L1_EG_Mu"].primTh,trigParList["L1_EG_Mu"].secTh, trigParList["L1_EG_Mu"].minQual ) );
-	   InsertInMenu("L1_Mu_EG",         Mu_EG(trigParList["L1_Mu_EG"].primTh,trigParList["L1_Mu_EG"].secTh, trigParList["L1_Mu_EG"].minQual) );
-	   
-//	   InsertInMenu("L1_SingleJet",     SingleJet(trigParList["L1_SingleJet"].primTh) );
-//      InsertInMenu("L1_DoubleJet",     DoubleJetCentral(trigParList["L1_DoubleJet"].primTh,trigParList["L1_DoubleJet"].secTh) );
-//	   InsertInMenu("L1_QuadJetC",      QuadJetCentral(trigParList["L1_QuadJetC"].primTh,trigParList["L1_QuadJetC"].secTh,trigParList["L1_QuadJetC"].triTh,trigParList["L1_QuadJetC"].quadTh) );
-//	   InsertInMenu("L1_SingleTau",     SingleTauJet(trigParList["L1_SingleTau"].primTh) );	   	   
-//	   InsertInMenu("L1_DoubleTau",     DoubleTauJetEta(trigParList["L1_DoubleTau"].primTh,trigParList["L1_DoubleTau"].secTh,trigParList["L1_DoubleTau"].etaCut) );
-
-//	   InsertInMenu("L1_ETM",           ETM(trigParList["L1_ETM"].primTh) );           
-//	   InsertInMenu("L1_HTT",           HTT(trigParList["L1_HTT"].primTh) );
-
-	} else if(Menu2015==10){  //Menu expanded cross triggers
-
-
-	   InsertInMenu("L1_SingleEG",      SingleEG_Eta(trigParList["L1_SingleEG"].primTh,trigParList["L1_SingleEG"].etaCut) );
-	   InsertInMenu("L1_SingleIsoEG",   SingleIsoEG_Eta(trigParList["L1_SingleIsoEG"].primTh,trigParList["L1_SingleIsoEG"].etaCut) );
-	   InsertInMenu("L1_DoubleEG",      DoubleEG(trigParList["L1_DoubleEG"].primTh,trigParList["L1_DoubleEG"].secTh) );
-	   InsertInMenu("L1_SingleEG_ETM",  EG_ETM(trigParList["L1_SingleEG_ETM"].primTh,trigParList["L1_SingleEG_ETM"].secTh) );
-	   InsertInMenu("L1_SingleEG_CJet", EG_JetCentral(trigParList["L1_SingleEG_CJet"].primTh,trigParList["L1_SingleEG_CJet"].secTh) );	   
-
-
-	   InsertInMenu("L1_SingleMu",      SingleMuEta(trigParList["L1_SingleMu"].primTh,trigParList["L1_SingleMu"].etaCut,trigParList["L1_SingleMu"].minQual));
-	   InsertInMenu("L1_DoubleMu",      DoubleMu(trigParList["L1_DoubleMu"].primTh,trigParList["L1_DoubleMu"].secTh,trigParList["L1_DoubleMu"].minQual));
-	   InsertInMenu("L1_SingleMu_ETM",  Muer_ETM(trigParList["L1_SingleMu_ETM"].primTh,trigParList["L1_SingleMu_ETM"].secTh,trigParList["L1_SingleMu_ETM"].etaCut, trigParList["L1_SingleMu_ETM"].minQual) );
-	   InsertInMenu("L1_SingleMu_CJet", Muer_JetCentral(trigParList["L1_SingleMu_CJet"].primTh,trigParList["L1_SingleMu_CJet"].secTh,trigParList["L1_SingleMu_CJet"].etaCut, trigParList["L1_SingleMu_CJet"].minQual) );
-
-	   
-	   InsertInMenu("L1_EG_Mu",         Mu_EG(trigParList["L1_EG_Mu"].primTh,trigParList["L1_EG_Mu"].secTh, trigParList["L1_EG_Mu"].minQual ) );
-	   InsertInMenu("L1_Mu_EG",         Mu_EG(trigParList["L1_Mu_EG"].primTh,trigParList["L1_Mu_EG"].secTh, trigParList["L1_Mu_EG"].minQual) );
-	   InsertInMenu("L1_EG_Tau",        EG_Tau(trigParList["L1_EG_Tau"].primTh,trigParList["L1_EG_Tau"].secTh, trigParList["L1_EG_Tau"].etaCut ) );
-	   InsertInMenu("L1_Mu_Tau",        Mu_Tau(trigParList["L1_Mu_Tau"].primTh,trigParList["L1_Mu_Tau"].secTh, trigParList["L1_Mu_Tau"].etaCut, trigParList["L1_Mu_Tau"].minQual) );
-
-	   
-	   InsertInMenu("L1_SingleJet",     SingleJet(trigParList["L1_SingleJet"].primTh) );
-      InsertInMenu("L1_DoubleJet",     DoubleJetCentral(trigParList["L1_DoubleJet"].primTh,trigParList["L1_DoubleJet"].secTh) );
-	   InsertInMenu("L1_QuadJetC",      QuadJetCentral(trigParList["L1_QuadJetC"].primTh,trigParList["L1_QuadJetC"].secTh,trigParList["L1_QuadJetC"].triTh,trigParList["L1_QuadJetC"].quadTh) );
-
-//	   InsertInMenu("L1_SingleTau",     SingleTauJet(trigParList["L1_SingleTau"].primTh) );	   	   
-	   InsertInMenu("L1_DoubleTau",     DoubleTauJetEta(trigParList["L1_DoubleTau"].primTh,trigParList["L1_DoubleTau"].secTh,trigParList["L1_DoubleTau"].etaCut) );
-	   InsertInMenu("L1_SingleTau_ETM", Tau_ETM(trigParList["L1_SingleTau_ETM"].primTh, trigParList["L1_SingleTau_ETM"].secTh, trigParList["L1_SingleTau_ETM"].etaCut) );
-	   InsertInMenu("L1_SingleTau_CJet",Tau_JetCentral(trigParList["L1_SingleTau_CJet"].primTh, trigParList["L1_SingleTau_CJet"].secTh, trigParList["L1_SingleTau_CJet"].etaCut) );
-
-
-	   InsertInMenu("L1_ETM",           ETM(trigParList["L1_ETM"].primTh) );           
-	   InsertInMenu("L1_HTT",           HTT(trigParList["L1_HTT"].primTh) );
-
-	   InsertInMenu("L1_SingleCJet_ETM",JetCentral_ETM(trigParList["L1_SingleCJet_ETM"].primTh, trigParList["L1_SingleCJet_ETM"].secTh, trigParList["L1_SingleCJet_ETM"].etaCut) ); 
-	   InsertInMenu("L1_DoubleCJet_ETM",DoubleJetCentral_ETM(trigParList["L1_DoubleCJet_ETM"].primTh, trigParList["L1_DoubleCJet_ETM"].secTh, trigParList["L1_DoubleCJet_ETM"].triTh, trigParList["L1_DoubleCJet_ETM"].etaCut) ); 
-
-	   InsertInMenu("L1_HTT_ETM",       HTT_ETM(trigParList["L1_HTT_ETM"].primTh, trigParList["L1_HTT_ETM"].secTh) );
-
-   } else {
-	
-	   printf("No Menu2015 defined\n");
-   }
 
 	Int_t NN = insert_ibin;
 
@@ -1762,10 +1067,8 @@ Bool_t L1Menu2015::EvalMenu(double lumiWeight) {
 	return res;
 }
 
-void L1Menu2015::EvalThresh(double lumiWeight) {
+void L1Menu2015::EvalThresh(Int_t calcThreshold, double lumiWeight) {
  
-// Flag for whether to evaluate 2-D trigger space (This can be CPU intensive) 
-   bool TwoDimScan = true;  
 
 /* notes:
 
@@ -1807,7 +1110,7 @@ void L1Menu2015::EvalThresh(double lumiWeight) {
 	//----------------------------------------------------------------------------------------------------------------------
 
 	//------ DoubleMu ---- 2-D Evaluation --Only fill half of space because symmetric (if id cuts identical) --------------
-	if(TwoDimScan) {
+	if(calcThreshold>1) {
 	  const unsigned n_bins_DoubleMu_X = h2_DoubleMu_byThreshold->GetNbinsX();
 //	  const unsigned n_bins_DoubleMu_Y = h2_DoubleMu_byThreshold->GetNbinsY();
 	  for(unsigned bin=1; bin <= n_bins_DoubleMu_X+1; bin++){	
@@ -1838,7 +1141,7 @@ void L1Menu2015::EvalThresh(double lumiWeight) {
 	//----------------------------------------------------------------------------------------------------------------------
 
 	//------ SingleMu_ETM ---- 2-D Evaluation ------------------------------------------------------------------------------
-   if(TwoDimScan) {
+   if(calcThreshold>1) {
 		const unsigned n_bins_SingleMu_ETM_X = h2_SingleMu_ETM_byThreshold->GetNbinsX();
 		const unsigned n_bins_SingleMu_ETM_Y = h2_SingleMu_ETM_byThreshold->GetNbinsY();
 		for(unsigned bin=1; bin <= n_bins_SingleMu_ETM_X+1; bin++){	
@@ -1868,7 +1171,7 @@ void L1Menu2015::EvalThresh(double lumiWeight) {
 	//----------------------------------------------------------------------------------------------------------------------
 
 	//------ SingleMu_CJet ---- 2-D Evaluation ------------------------------------------------------------------------------
-	if(TwoDimScan) {
+	if(calcThreshold>1) {
 		const unsigned n_bins_SingleMu_CJet_X = h2_SingleMu_CJet_byThreshold->GetNbinsX();
 		const unsigned n_bins_SingleMu_CJet_Y = h2_SingleMu_CJet_byThreshold->GetNbinsY();
 		for(unsigned bin=1; bin <= n_bins_SingleMu_CJet_X+1; bin++){	
@@ -1920,7 +1223,7 @@ void L1Menu2015::EvalThresh(double lumiWeight) {
 	//----------------------------------------------------------------------------------------------------------------------
 
 	//------ DoubleEG ---- 2-D Evaluation ----(Fill only bottom half since symmetric (if ID cuts same) -------------------
-	if(TwoDimScan) {
+	if(calcThreshold>1) {
 		const unsigned n_bins_DoubleEG_X = h2_DoubleEG_byThreshold->GetNbinsX();
 //		const unsigned n_bins_DoubleEG_Y = h2_DoubleEG_byThreshold->GetNbinsY();
 		for(unsigned bin=1; bin <= n_bins_DoubleEG_X+1; bin++){	
@@ -1950,7 +1253,7 @@ void L1Menu2015::EvalThresh(double lumiWeight) {
 	//----------------------------------------------------------------------------------------------------------------------
 
 	//------ SingleEG_ETM ---- 2-D Evaluation ------------------------------------------------------------------------------
-	if(TwoDimScan) {
+	if(calcThreshold>1) {
 		const unsigned n_bins_SingleEG_ETM_X = h2_SingleEG_ETM_byThreshold->GetNbinsX();
 		const unsigned n_bins_SingleEG_ETM_Y = h2_SingleEG_ETM_byThreshold->GetNbinsY();
 		for(unsigned bin=1; bin <= n_bins_SingleEG_ETM_X+1; bin++){	
@@ -1982,7 +1285,7 @@ void L1Menu2015::EvalThresh(double lumiWeight) {
 
 
 	//------ SingleEG_CJet ---- 2-D Evaluation ------------------------------------------------------------------------------
-	if(TwoDimScan) {	
+	if(calcThreshold>1) {	
 		const unsigned n_bins_SingleEG_CJet_X = h2_SingleEG_CJet_byThreshold->GetNbinsX();
 		const unsigned n_bins_SingleEG_CJet_Y = h2_SingleEG_CJet_byThreshold->GetNbinsY();
 		for(unsigned bin=1; bin <= n_bins_SingleEG_CJet_X+1; bin++){	
@@ -2014,14 +1317,14 @@ void L1Menu2015::EvalThresh(double lumiWeight) {
 	for(unsigned bin=1; bin <= n_bins_EG_Mu+1; bin++){
 		const float bin_low_edge = h_EG_Mu_byThreshold->GetBinLowEdge(bin);
 		const float bin_center = h_EG_Mu_byThreshold->GetBinCenter(bin);
-		if(Mu_EG( bin_center*(trigParList["L1_EG_Mu"].primTh/trigParList["L1_EG_Mu"].secTh), bin_low_edge, trigParList["L1_EG_Mu"].minQual) ){
+		if(EG_Mu(bin_low_edge,  bin_center*(trigParList["L1_EG_Mu"].secTh/trigParList["L1_EG_Mu"].primTh), trigParList["L1_EG_Mu"].minQual) ){
 			h_EG_Mu_byThreshold->Fill(bin_center,lumiWeight);
 		}
 	}	
 	//----------------------------------------------------------------------------------------------------------------------
 
 	//------ Mu_EG ---- 2-D Evaluation ------------------------------------------------------------------------------
-	if(TwoDimScan) {	
+	if(calcThreshold>1) {	
 		const unsigned n_bins_Mu_EG_X = h2_Mu_EG_byThreshold->GetNbinsX();
 		const unsigned n_bins_Mu_EG_Y = h2_Mu_EG_byThreshold->GetNbinsY();
 		for(unsigned bin=1; bin <= n_bins_Mu_EG_X+1; bin++){	
@@ -2050,7 +1353,7 @@ void L1Menu2015::EvalThresh(double lumiWeight) {
 	}
 	
 	//------ Mu_Tau ---- 2-D Evaluation ------------------------------------------------------------------------------
-	if(TwoDimScan) {	
+	if(calcThreshold>1) {	
 		const unsigned n_bins_Mu_Tau_X = h2_Mu_Tau_byThreshold->GetNbinsX();
 		const unsigned n_bins_Mu_Tau_Y = h2_Mu_Tau_byThreshold->GetNbinsY();
 		for(unsigned bin=1; bin <= n_bins_Mu_Tau_X+1; bin++){	
@@ -2079,7 +1382,7 @@ void L1Menu2015::EvalThresh(double lumiWeight) {
 	//----------------------------------------------------------------------------------------------------------------------
 
 	//------ EG_Tau ---- 2-D Evaluation ------------------------------------------------------------------------------
-	if(TwoDimScan) {	
+	if(calcThreshold>1) {	
 		const unsigned n_bins_EG_Tau_X = h2_EG_Tau_byThreshold->GetNbinsX();
 		const unsigned n_bins_EG_Tau_Y = h2_EG_Tau_byThreshold->GetNbinsY();
 		for(unsigned bin=1; bin <= n_bins_EG_Tau_X+1; bin++){	
@@ -2121,7 +1424,7 @@ void L1Menu2015::EvalThresh(double lumiWeight) {
 	
 
 	//------ DoubleJet ---- 2-D Evaluation ------------------------------------------------------------------------------
-	if(TwoDimScan) {	
+	if(calcThreshold>1) {	
 		const unsigned n_bins_DoubleJet_X = h2_DoubleJet_byThreshold->GetNbinsX();
 //		const unsigned n_bins_DoubleJet_Y = h2_DoubleJet_byThreshold->GetNbinsY();
 		for(unsigned bin=1; bin <= n_bins_DoubleJet_X+1; bin++){	
@@ -2141,19 +1444,19 @@ void L1Menu2015::EvalThresh(double lumiWeight) {
 
 	
 	//------- QuadJet ------------------------------------------------------------------------------------------------------
-	const unsigned n_bins_QuadJetCentral = h_QuadJetCentral_byThreshold->GetNbinsX();
+	const unsigned n_bins_QuadJetCentral = h_QuadJetC_byThreshold->GetNbinsX();
 	for(unsigned bin=1; bin <= n_bins_QuadJetCentral+1; bin++){
-		const float bin_low_edge = h_QuadJetCentral_byThreshold->GetBinLowEdge(bin);
-		const float bin_center = h_QuadJetCentral_byThreshold->GetBinCenter(bin);
+		const float bin_low_edge = h_QuadJetC_byThreshold->GetBinLowEdge(bin);
+		const float bin_center = h_QuadJetC_byThreshold->GetBinCenter(bin);
 		if(QuadJetCentral(bin_low_edge, bin_center*(trigParList["L1_QuadJetC"].secTh/trigParList["L1_QuadJetC"].primTh) , bin_center*(trigParList["L1_QuadJetC"].triTh/trigParList["L1_QuadJetC"].primTh), bin_center*(trigParList["L1_QuadJetC"].quadTh/trigParList["L1_QuadJetC"].primTh))){
-			h_QuadJetCentral_byThreshold->Fill(bin_center,lumiWeight);
+			h_QuadJetC_byThreshold->Fill(bin_center,lumiWeight);
 		}
 	}
 	//----------------------------------------------------------------------------------------------------------------------
 
 
 	//------ QuadJet ---- 2-D Evaluation (A)------------------------------------------------------------------------------
-	if(TwoDimScan) {	
+	if(calcThreshold>1) {	
 		const unsigned n_bins_QuadJetCentral_X = h2A_QuadJetCentral_byThreshold->GetNbinsX();
 //		const unsigned n_bins_QuadJetCentral_Y = h2A_QuadJetCentral_byThreshold->GetNbinsY();
 		for(unsigned bin=1; bin <= n_bins_QuadJetCentral_X+1; bin++){	
@@ -2172,7 +1475,7 @@ void L1Menu2015::EvalThresh(double lumiWeight) {
 
 
 	//------ QuadJet ---- 2-D Evaluation (B)------------------------------------------------------------------------------
-	if(TwoDimScan) {	
+	if(calcThreshold>1) {	
 		const unsigned n_bins_QuadJetCentral_X = h2B_QuadJetCentral_byThreshold->GetNbinsX();
 //		const unsigned n_bins_QuadJetCentral_Y = h2B_QuadJetCentral_byThreshold->GetNbinsY();
 		for(unsigned bin=1; bin <= n_bins_QuadJetCentral_X+1; bin++){	
@@ -2213,7 +1516,7 @@ void L1Menu2015::EvalThresh(double lumiWeight) {
 
 
 	//------ DoubleTau ---- 2-D Evaluation ------------------------------------------------------------------------------
-	if(TwoDimScan) {	
+	if(calcThreshold>1) {	
 		const unsigned n_bins_DoubleTau_X = h2_DoubleTau_byThreshold->GetNbinsX();
 //		const unsigned n_bins_DoubleTau_Y = h2_DoubleTau_byThreshold->GetNbinsY();
 		for(unsigned bin=1; bin <= n_bins_DoubleTau_X+1; bin++){	
@@ -2242,7 +1545,7 @@ void L1Menu2015::EvalThresh(double lumiWeight) {
 	//----------------------------------------------------------------------------------------------------------------------			
 
 	//------ SingleTau + ETM---- 2-D Evaluation ------------------------------------------------------------------------------
-	if(TwoDimScan) {	
+	if(calcThreshold>1) {	
 		const unsigned n_bins_SingleTau_ETM_X = h2_SingleTau_ETM_byThreshold->GetNbinsX();
 		const unsigned n_bins_SingleTau_ETM_Y = h2_SingleTau_ETM_byThreshold->GetNbinsY();
 		for(unsigned bin=1; bin <= n_bins_SingleTau_ETM_X+1; bin++){	
@@ -2273,7 +1576,7 @@ void L1Menu2015::EvalThresh(double lumiWeight) {
 	//----------------------------------------------------------------------------------------------------------------------			
 
 	//------ SingleTau + CJet---- 2-D Evaluation ------------------------------------------------------------------------------
-	if(TwoDimScan) {	
+	if(calcThreshold>1) {	
 		const unsigned n_bins_SingleTau_CJet_X = h2_SingleTau_CJet_byThreshold->GetNbinsX();
 		const unsigned n_bins_SingleTau_CJet_Y = h2_SingleTau_CJet_byThreshold->GetNbinsY();
 		for(unsigned bin=1; bin <= n_bins_SingleTau_CJet_X+1; bin++){	
@@ -2322,7 +1625,7 @@ void L1Menu2015::EvalThresh(double lumiWeight) {
 	}
 
 	//------ HTT + ETM ---- 2-D Evaluation ------------------------------------------------------------------------------
-	if(TwoDimScan) {	
+	if(calcThreshold>1) {	
 		const unsigned n_bins_HTT_ETM_X = h2_HTT_ETM_byThreshold->GetNbinsX();
 		const unsigned n_bins_HTT_ETM_Y = h2_HTT_ETM_byThreshold->GetNbinsY();
 		for(unsigned bin=1; bin <= n_bins_HTT_ETM_X+1; bin++){	
@@ -2352,7 +1655,7 @@ void L1Menu2015::EvalThresh(double lumiWeight) {
 	//----------------------------------------------------------------------------------------------------------------------			
 
 	//------ ETM + CJet---- 2-D Evaluation ------------------------------------------------------------------------------
-	if(TwoDimScan) {	
+	if(calcThreshold>1) {	
 		const unsigned n_bins_SingleCJet_ETM_X = h2_SingleCJet_ETM_byThreshold->GetNbinsX();
 		const unsigned n_bins_SingleCJet_ETM_Y = h2_SingleCJet_ETM_byThreshold->GetNbinsY();
 		for(unsigned bin=1; bin <= n_bins_SingleCJet_ETM_X+1; bin++){	
@@ -2381,7 +1684,7 @@ void L1Menu2015::EvalThresh(double lumiWeight) {
 	//----------------------------------------------------------------------------------------------------------------------			
 
 	//------ ETM + CJet---- 2-D Evaluation ------------------------------------------------------------------------------
-	if(TwoDimScan) {	
+	if(calcThreshold>1) {	
 		const unsigned n_bins_DoubleCJet_ETM_X = h2_DoubleCJet_ETM_byThreshold->GetNbinsX();
 		const unsigned n_bins_DoubleCJet_ETM_Y = h2_DoubleCJet_ETM_byThreshold->GetNbinsY();
 		for(unsigned bin=1; bin <= n_bins_DoubleCJet_ETM_X+1; bin++){	
@@ -2404,6 +1707,40 @@ void L1Menu2015::EvalThresh(double lumiWeight) {
 
 
 Bool_t L1Menu2015::Mu_EG(Float_t mucut, Float_t EGcut , Int_t minMuQual) {
+
+	Bool_t raw = PhysicsBits[0];    // ZeroBias
+	if (! raw) return false;
+
+
+	Bool_t eg =false;
+	Bool_t muon = false;
+
+	Int_t Nmu = myEvt_.Nmu;
+	for (Int_t imu=0; imu < Nmu; imu++) {   
+		Int_t bx = myEvt_.Bxmu.at(imu);		
+		if (bx != 0) continue;
+		Float_t pt = myEvt_.Ptmu.at(imu);			
+		Int_t qual = myEvt_.Qualmu.at(imu);        
+		if ( qual < minMuQual) continue;
+		if (pt >= mucut) muon = true;
+	}
+
+	Int_t Nele = myEvt_.Nele;
+	for (Int_t ue=0; ue < Nele; ue++) {
+		Int_t bx = myEvt_.Bxel[ue];        		
+		if (bx != 0) continue;
+		Float_t rank = myEvt_.Etel[ue];    // the rank of the electron
+		Float_t pt = rank ;
+		if (pt >= EGcut) eg = true;
+	}  // end loop over EM objects
+
+	Bool_t ok = muon && eg;
+	return ok;
+
+}
+
+
+Bool_t L1Menu2015::EG_Mu(Float_t EGcut, Float_t mucut , Int_t minMuQual) {
 
 	Bool_t raw = PhysicsBits[0];    // ZeroBias
 	if (! raw) return false;
@@ -4372,7 +3709,7 @@ Bool_t L1Menu2015::TripleEG(Float_t cut1, Float_t cut2, Float_t cut3 ) {
 }
 
 
-void L1Menu2015::Loop(Bool_t calcThreshold, Bool_t useL1Extra, TString lsRunFile, const int n_events_) {
+void L1Menu2015::Loop(Int_t calcThreshold, Bool_t useL1Extra, TString lsRunFile, TString L1MenuFile, const int n_events_) {
 
 	
 	const Int_t nevents = (n_events_ < 0) ? GetEntries() : n_events_;
@@ -4394,7 +3731,7 @@ void L1Menu2015::Loop(Bool_t calcThreshold, Bool_t useL1Extra, TString lsRunFile
 		ifs >> IntL[ind];
 		ifs >> InstL[ind];
 		ifs >> PU[ind];
-		printf("LS %f  InstL %6.3e \n",LS[ind],InstL[ind]);
+		//printf("LS %f  InstL %6.3e \n",LS[ind],InstL[ind]);
 		ind++;
 	}
 
@@ -4408,7 +3745,8 @@ void L1Menu2015::Loop(Bool_t calcThreshold, Bool_t useL1Extra, TString lsRunFile
 		GetEntry(i);
 
       cnt++;
-      if(cnt%(int)pow(10.,(double)((int)log10((double)cnt)))==0) printf("Event Number %i\n",cnt);
+      if((cnt%100)==0) printf("Event Number %i\r",cnt); fflush(stdout);
+//      if(cnt%(int)pow(10.,(double)((int)log10((double)cnt)))==0) printf("Event Number %i\r",cnt); fflush(stdout);
 
 
 // Fill my event data
@@ -4419,8 +3757,8 @@ void L1Menu2015::Loop(Bool_t calcThreshold, Bool_t useL1Extra, TString lsRunFile
                 //printf("Entry %i",i);
 		FilL1Bits();
 
-		if (first) MyInit();
-
+		if (first) InitL1Menu(L1MenuFile);
+		
 		//HFW
 		//PhysicsBits[0] = true; //force it!
 		Bool_t raw = PhysicsBits[0];  // ZeroBias
@@ -4460,7 +3798,7 @@ void L1Menu2015::Loop(Bool_t calcThreshold, Bool_t useL1Extra, TString lsRunFile
                           (theTargetLumi/theLumiForThisSetOfLumiSections) /  
                           (23.3570304 * theNumberOfUserdLumiSections) / 1000.;
 		Bool_t pass = EvalMenu(lumiWeight);
-		if(calcThreshold) EvalThresh(lumiWeight);
+		if(calcThreshold>0) EvalThresh(calcThreshold,lumiWeight);
 
 		if (pass) NPASS ++;
 
@@ -4510,10 +3848,10 @@ void L1Menu2015::Loop(Bool_t calcThreshold, Bool_t useL1Extra, TString lsRunFile
 	}  // end evt loop
 
 
-	std::cout << " Prescales for: " << theTargetLumi << ", LumiForThisSetOfLumiSections = " << theLumiForThisSetOfLumiSections << ", L1NtupleFileName = " << theL1NtupleFileName << std::endl;
-	std::cout << std::endl << " --------------------------------------------------------- " << std::endl << std::endl;
+//	std::cout << " Prescales for: " << theTargetLumi << ", LumiForThisSetOfLumiSections = " << theLumiForThisSetOfLumiSections << ", L1NtupleFileName = " << theL1NtupleFileName << std::endl;
+//	std::cout << std::endl << " --------------------------------------------------------- " << std::endl << std::endl;
 
-	
+/*	
 // Loop over triggers and print out configuration
 //=================================================
         for(std::map<std::string, trigPar>::iterator itr = trigParList.begin(); itr != trigParList.end(); itr++) {
@@ -4525,357 +3863,40 @@ void L1Menu2015::Loop(Bool_t calcThreshold, Bool_t useL1Extra, TString lsRunFile
 						        << setw(5) << (itr->second).minQual << ")"  << std::endl;
 	} 
 	std::cout << std::endl;
+*/
         	
 }
 
 
 
-void RunL1_HFW(Bool_t calcThreshold=false,Bool_t useL1Extra=true, Int_t pMenu2015 = 0, Int_t usedL1MenuThr=0,Int_t whichDataSetToUse=1,Int_t whichFileToUse=0, Float_t targetlumi=200, Int_t pNevts = -1) {
-
-// Make sure we get the errors correct on histograms   
-	TH1::SetDefaultSumw2();
-
-//%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-	// Using the 10-bunches High PU run, 179828. In this run ETM30 and HTT50 were enabled (they were not enabled in the 1-bunch run).
-	Float_t NumberOfUserdLumiSections=0; 
-	Float_t LumiForThisSetOfLumiSections=0;
-	std::string L1NtupleFileName="";
-	std::string jobTag="";
-	Float_t AveragePU=0;
-	Float_t ZeroBiasPrescale=0;
-	Bool_t L1JetCorrection=false;
-	Menu2015 = pMenu2015;
-	Int_t procNevts = pNevts;
-	TString lsFileName = "";
+Float_t L1Menu2015::RunL1Ana(
+     TString L1MenuFileName,                //File name containing L1 Menu Algorithms and thresholds. (See InitL1Menu for format)
+	  TString lsFileName,	                 //LumiSection Luminosity (used for data)
+	  TString jobTag,                        //Job tag for storing output
+	  Int_t   procNevts,                     //Number of events to run over.  If -1, run over all events in the file
+	  Int_t   makeThresholdPlots,            //Flag for whether to calculate the rate vs threshold plots (0=skip all; 1=do 1-D plots; 2=do 1-d and 2-d plots)
+	  Bool_t  useL1Extra	                    //Flag for whether to use L1Extra values
+                ) {
+	
 	
 
-	if (whichDataSetToUse==1) {
-	// -- Run 179828, LS 374 - 394, PU=28:
-		NumberOfUserdLumiSections = 21; 
-		LumiForThisSetOfLumiSections = 0.437;
-		switch(whichFileToUse){
-			case 0:
-				L1NtupleFileName = "/uscms_data/d1/winer/batch_tutorial/L1Tree_R179828_LS374-394.root";
-				jobTag = "R179828_LS374-394";
-			break;
-			case 1:
-				L1NtupleFileName = "/uscms_data/d1/winer/batch_tutorial/L1SKIM_R179828_LS374-394_NoGCT_reEmul.root";
-				jobTag = "R179828_LS374-394_NoGCT_reEmul";
-			break;
-			case 2:
-				L1NtupleFileName = "/uscms_data/d1/winer/batch_tutorial/L1SKIM_R179828_LS374-394_GCT_jet_seed_5GeV.root";
-				jobTag = "R179828_LS374-394_GCT_jet_seed_5GeV";
-			break;
-			default: cout << __LINE__ << ":" << __FILE__ << endl; 
-				
-		}
-		AveragePU = 28;
-		ZeroBiasPrescale = 3 * 148; //L1 Prescale * HLT Prescale
-		L1JetCorrection=false;
-	}
-	else if (whichDataSetToUse==2) {
-
-	// -- Run 179828, LS 300 - 320, PU=29:
-		NumberOfUserdLumiSections = 21; 
-		LumiForThisSetOfLumiSections = 0.463;
-		switch(whichFileToUse){
-			case 0:
-				L1NtupleFileName = "/uscms_data/d1/winer/batch_tutorial/L1Tree_R179828_LS300-320.root";
-				jobTag = "R179828_LS300-320";
-			break;
-			case 1:
-				L1NtupleFileName = "/uscms_data/d1/winer/batch_tutorial/L1SKIM_R179828_LS300-320_NoGCT_reEmul.root";
-				jobTag = "R179828_LS300-320_NoGCT_reEmul";
-			break;
-			case 2:
-				L1NtupleFileName = "/uscms_data/d1/winer/batch_tutorial/L1SKIM_R179828_LS300-320_GCT_jet_seed_5GeV.root";
-				jobTag = "R179828_LS300-320_GCT_jet_seed_5GeV";
-			break;
-			default: cout << __LINE__ << ":" << __FILE__ << endl; 
-				
-		}
-		AveragePU = 29;
-		ZeroBiasPrescale = 3 * 148; //L1 Prescale * HLT Prescale
-		L1JetCorrection=false;
-	}
-	else if (whichDataSetToUse==3) {
-
-	// -- Run 179828, LS 270 - 290, PU=30:
-		NumberOfUserdLumiSections = 21; 
-		LumiForThisSetOfLumiSections = 0.470;
-		switch(whichFileToUse){
-			case 0:
-				L1NtupleFileName = "/uscms_data/d1/winer/batch_tutorial/L1Tree_R179828_LS270-290.root";
-				jobTag = "R179828_LS270-290";
-			break;
-			case 1:
-				L1NtupleFileName = "/uscms_data/d1/winer/batch_tutorial/L1SKIM_R179828_LS270-290_NoGCT_reEmul.root";
-				jobTag = "R179828_LS270-290_NoGCT_reEmul";
-			break;
-			case 2:
-				L1NtupleFileName = "/uscms_data/d1/winer/batch_tutorial/L1SKIM_R179828_LS270-290_GCT_jet_seed_5GeV.root";
-				jobTag = "R179828_LS270-290_GCT_jet_seed_5GeV";
-			break;
-			default: cout << __LINE__ << ":" << __FILE__ << endl; 
-				
-		}
-		AveragePU = 29;
-		ZeroBiasPrescale = 3 * 148; //L1 Prescale * HLT Prescale
-		L1JetCorrection=false;
-	}
-	else if (whichDataSetToUse==4) {
-
-	// -- Run 179828, LS 140 - 160, PU=33:
-		NumberOfUserdLumiSections = 21; 
-		LumiForThisSetOfLumiSections = 0.509;
-		switch(whichFileToUse){
-			case 0:
-				L1NtupleFileName = "/uscms_data/d1/winer/batch_tutorial/L1Tree_R179828_LS140-160.root";
-				jobTag = "R179828_LS140-160";
-			break;
-			case 1:
-				L1NtupleFileName = "/uscms_data/d1/winer/batch_tutorial/L1SKIM_R179828_LS140-160_NoGCT_reEmul.root";
-				jobTag = "R179828_LS140-160_NoGCT_reEmul";
-			break;
-			case 2:
-				L1NtupleFileName = "/uscms_data/d1/winer/batch_tutorial/L1SKIM_R179828_LS140-160_GCT_jet_seed_5GeV.root";
-				jobTag = "R179828_LS140-160_GCT_jet_seed_5GeV";
-			break;
-			default: cout << __LINE__ << ":" << __FILE__ << endl; 
-				
-		}
-		AveragePU = 32;
-		ZeroBiasPrescale = 3 * 148; //L1 Prescale * HLT Prescale
-		L1JetCorrection=false;
-	}
-	else if (whichDataSetToUse==5) {
-
-	// -- Run 179828, LS 50 - 70, PU=34:
-		NumberOfUserdLumiSections = 21; 
-		LumiForThisSetOfLumiSections = 0.529;
-		switch(whichFileToUse){
-			case 0:
-				L1NtupleFileName = "/uscms_data/d1/winer/batch_tutorial/L1Tree_R179828_LS050-070.root";
-				jobTag = "R179828_LS050-070";		
-			break;
-			case 1:
-				L1NtupleFileName = "/uscms_data/d1/winer/batch_tutorial/L1SKIM_R179828_LS050-070_NoGCT_reEmul.root";
-				jobTag = "R179828_LS050-070_NoGCT_reEmul";		
-			break;
-			case 2:
-				L1NtupleFileName = "/uscms_data/d1/winer/batch_tutorial/L1SKIM_R179828_LS050-070_GCT_jet_seed_5GeV.root";
-				jobTag = "R179828_LS050-070_GCT_jet_seed_5GeV";		
-			break;
-			default: cout << __LINE__ << ":" << __FILE__ << endl; 
-				
-		}
-		AveragePU = 33;
-		ZeroBiasPrescale = 3 * 148; //L1 Prescale * HLT Prescale
-		L1JetCorrection=false;
-	}
-	else if (whichDataSetToUse==6) {
-
-	// -- Run 178803, LS 400 - 420, PU=18, (with bunch trains i.e. possible OOT PU): 
-		NumberOfUserdLumiSections = 21; 
-		LumiForThisSetOfLumiSections = 0.131;
-		switch(whichFileToUse){
-			case 0:
-				L1NtupleFileName = "/uscms_data/d1/winer/batch_tutorial/L1Tree_R178803_LS400-420.root";
-				jobTag = "R178803_LS400-420";
-			break;
-			case 1:
-				L1NtupleFileName = "/uscms_data/d1/winer/batch_tutorial/L1SKIM_R178803_LS400-420._NoGCT_reEmul.root";
-				jobTag = "R178803_LS400-420_NoGCT_reEmul";
-			break;
-			case 2:
-				L1NtupleFileName = "/uscms_data/d1/winer/batch_tutorial/L1SKIM_R178803_LS400-420_GCT_jet_seed_5GeV.root";
-				jobTag = "R178803_LS400-420_GCT_jet_seed_5GeV";
-			break;
-			default: cout << __LINE__ << ":" << __FILE__ << endl; 
-				
-		}
-		AveragePU = 18;
-		ZeroBiasPrescale = 29483;
-		L1JetCorrection=false;
-	}
-	else if (whichDataSetToUse==7) {
-	// -- MC Run
-	   int nevt = 2497500;
-		if(procNevts>0) nevt = procNevts;
-		NumberOfUserdLumiSections = (float)nevt/(10.*11246.* 23.3);  //lumi section time/number of mc events in file 23.3 gets removed below.
-		LumiForThisSetOfLumiSections = 0.529;
-		//LumiForThisSetOfLumiSections = targetlumi; //make scale factor 1.0
-		switch(whichFileToUse){
-			case 0:
-				L1NtupleFileName = "/obsidian/users/winer/cms/L1Trigger/Simulations/L1SKIM_MC_7TeV_Ave32-v3_AllSet0_NoGCT_reEmul.root";
-				jobTag = "MCv2_Ave32_Set0";
-			break;
-			case 1:
-				L1NtupleFileName = "/obsidian/users/winer/cms/L1Trigger/Simulations/L1SKIM_MC_7TeV_Ave32-v3_AllSet0_NoGCT_reEmul.root";
-				jobTag = "MCv3_Ave32_AllSet0_NoGCT_reEmul";
-			break;
-			case 2:
-				L1NtupleFileName = "/uscms_data/d1/winer/batch_tutorial/L1SKIM_MC_7TeV_Ave32-v3_AllSet0_GCT_jet_seed_5GeV.root";
-				jobTag = "MCv3_Ave32_AllSet0_GCT_jet_seed_5GeV";
-			break;
-			default: cout << __LINE__ << ":" << __FILE__ << endl; 
-				
-		}
-		AveragePU = 32;
-		ZeroBiasPrescale = 1;  //MC No prescale
-		L1JetCorrection=false;
-	}	
-	else if (whichDataSetToUse==8) {
-	// -- MC Run
-	   int nevt = 360000;
-		if(procNevts>0) nevt = procNevts;
-		NumberOfUserdLumiSections = (float)nevt/(2808.*11246.*23.3);  //lumi section time/number of mc events in file 23.3 gets removed below.
-		LumiForThisSetOfLumiSections = 200.;
-		//LumiForThisSetOfLumiSections = targetlumi; //make scale factor 1.0
-		switch(whichFileToUse){
-			case 0:
-				L1NtupleFileName = "";
-				jobTag = "MCv2_Ave32_Set0";
-			break;
-			case 1:
-				L1NtupleFileName = "/obsidian/users/winer/cms/L1Trigger/Simulations/L1SKIM_MinBias_14TeV_StdGeom_PU50_All0000_NoGCT_reEmul.root";
-				jobTag = "MinBias_14TeV_StdGeom_PU50_All0000_NoGCT_reEmul_Test2";
-			break;
-			case 2:
-				L1NtupleFileName = "/uscms_data/d1/winer/batch_tutorial/L1SKIM_MinBias_14TeV_StdGeom_PU50_All0000_GCT_jet_seed_5GeV.root";
-				jobTag = "MinBias_14TeV_StdGeom_PU50_All0000_GCT_jet_seed_5GeV";
-			break;
-			default: cout << __LINE__ << ":" << __FILE__ << endl; 
-				
-		}
-		AveragePU = 50;
-		ZeroBiasPrescale = 1;  //MC No prescale
-		L1JetCorrection=false;
-	}
-	else if (whichDataSetToUse==9) {
-	// -- MC Run
-		NumberOfUserdLumiSections = 63; 
-		LumiForThisSetOfLumiSections = 0.1765; //units of e32
-
-		switch(whichFileToUse){
-			case 0:
-				L1NtupleFileName = "/obsidian/users/winer/cms/L1Trigger/Simulations/Bristol/8TeV/ZeroBiasHPF1/2012HPF_66_v1/Test2.root";
-				jobTag = "ZeroBiasHPF1_66";
-			break;
-			default: cout << __LINE__ << ":" << __FILE__ << endl; 
-				
-		}
-		lsFileName = "getLumi_out_pixCorrLumi_66PU_stdCorr.txt";
-		AveragePU = 66;
-		ZeroBiasPrescale = 92;  //MC No prescale
-		L1JetCorrection=false;
-	}
-	else if (whichDataSetToUse==10) {
-	// -- MC Run
-		NumberOfUserdLumiSections = 143; 
-		LumiForThisSetOfLumiSections = 0.061; // Note: wide range in this file...average is not a good thing //units of e32
-
-		switch(whichFileToUse){
-			case 0:
-				L1NtupleFileName = "/obsidian/users/winer/cms/L1Trigger/Simulations/Bristol/8TeV/ZeroBiasHPF1/2012HPF_45_v1/Test.root";
-				jobTag = "ZeroBiasHPF1_45";
-			break;
-			default: cout << __LINE__ << ":" << __FILE__ << endl; 
-				
-		}
-		lsFileName = "getLumi_out_pixCorrLumi_45PU_stdCorr.txt";
-		AveragePU = 45;
-		ZeroBiasPrescale = 92;  //MC No prescale
-		L1JetCorrection=false;
-	} 
-	else if (whichDataSetToUse==11) {
-	// -- MC Run
-		NumberOfUserdLumiSections = 143; 
-		LumiForThisSetOfLumiSections = 0.061; // Note: wide range in this file...average is not a good thing //units of e32
-
-		switch(whichFileToUse){
-			case 0:
-				L1NtupleFileName = "/obsidian/users/winer/cms/L1Trigger/Simulations/Bristol/8TeV/UpgradeAlgos/ZeroBiasHPF1/2012HPF_45_v1/Test.root";
-				jobTag = "UpgradeAlgo_ZeroBiasHPF1_45";
-			break;
-			default: cout << __LINE__ << ":" << __FILE__ << endl; 
-				
-		}
-		lsFileName = "getLumi_out_pixCorrLumi_45PU_stdCorr.txt";
-		AveragePU = 45;
-		ZeroBiasPrescale = 92;  //MC No prescale
-		L1JetCorrection=false;
-	} 	
-	else if (whichDataSetToUse==12) {
-	// -- MC Run
-	   int nevt = 3100;
-		if(procNevts>0) nevt = procNevts;
-		NumberOfUserdLumiSections = (float)nevt/(2808.*11246.*23.3);  //lumi section time/number of mc events in file 23.3 gets removed below.
-		LumiForThisSetOfLumiSections = 200.;
-
-		switch(whichFileToUse){
-			case 0:
-				L1NtupleFileName = "/obsidian/users/winer/cms/L1Trigger/Simulations/L1NT_myminbias_8TeV_pu66_534_all.root";
-				jobTag = "RichardTest";
-			break;
-			default: cout << __LINE__ << ":" << __FILE__ << endl; 
-				
-		}
-		AveragePU = 66;
-		ZeroBiasPrescale = 1;  //MC No prescale
-		L1JetCorrection=false;
-	} 	 	 		 	 
-	else {
-		std::cout << std::endl << "ERROR: Please define a ntuple file which is in the allowed range! You did use: whichDataSetToUse = " << whichDataSetToUse << " This is not in the allowed range" << std::endl << std::endl;
-	}
-
+					 
 //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 
 	std::stringstream histos;
-	std::string MenuPar = "Menu2015";
-	histos << "L1RateHist_" << jobTag << "_" << MenuPar << "_" << Menu2015 << "_" << usedL1MenuThr << "_" << targetlumi << "_" << AveragePU << "_" << LumiForThisSetOfLumiSections << "_rates.root";
-        TString outHistName = histos.str();
+	histos << "L1RateHist_" << jobTag;
+	if(makeThresholdPlots>0) histos << "Thr" << makeThresholdPlots; 
+	histos << "_rates.root";
+   TString outHistName = histos.str();
 	TFile* outHist = new TFile(outHistName,"RECREATE");
 	outHist->cd();
 
 
 //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-//HFW   For comparison to Chris L.
-/*
-//Cross
-	h_SingleMu_ETM_byThreshold  = new TH1F("h_SingleMu_ETM_byThreshold","h_SingleMu_ETM_byThreshold",140,0.0,140.);
-	h_SingleMu_CJet_byThreshold = new TH1F("h_SingleMu_CJet_byThreshold","h_SingleMu_CJet_byThreshold",140,0.0,140.);
-	h_SingleEG_ETM_byThreshold  = new TH1F("h_SingleEG_ETM_byThreshold","h_SingleEG_ETM_byThreshold",63,0.0,63.);
-	h_SingleEG_CJet_byThreshold = new TH1F("h_SingleEG_CJet_byThreshold","h_SingleEG_CJet_byThreshold",63,0.0,63.);
 
-	h_Mu_EG_byThreshold = new TH1F("h_Mu_EG_byThreshold","h_Mu_EG_byThreshold",140,0.0,140.);
-	h_EG_Mu_byThreshold = new TH1F("h_EG_Mu_byThreshold","h_EG_Mu_byThreshold",63,0.0,63.);
-
-//Jets
-	h_SingleJet_byThreshold      = new TH1F("h_SingleJet_byThreshold","h_SingleJet_byThreshold",400,0.0,400.);
-   h_DoubleJet_byThreshold      = new TH1F("h_DoubleJet_byThreshold","h_DoubleJet_byThreshold",400,0.0,400.);
-	h_QuadJetCentral_byThreshold = new TH1F("h_QuadJetCentral_byThreshold","h_QuadJetCentral_byThreshold",400,0.0,400.);
-	h_SingleTau_byThreshold      = new TH1F("h_SingleTau_byThreshold","h_SingleTau_byThreshold",400,0.0,400.);
-	h_DoubleTau_byThreshold      = new TH1F("h_DoubleTau_byThreshold","h_DoubleTau_byThreshold",400,0.0,400.);
-
-//Sums
-	h_HTT_byThreshold = new TH1F("h_HTT_byThreshold","h_HTT_byThreshold",750,0.0,750.);
-	h_ETM_byThreshold = new TH1F("h_ETM_byThreshold","h_ETM_byThreshold",750,0.0,750.);
-//EGamma
-	h_SingleEG_byThreshold    = new TH1F("h_SingleEG_byThreshold","h_SingleEG_byThreshold",63,0.0,63.);
-	h_SingleIsoEG_byThreshold = new TH1F("h_SingleIsoEG_byThreshold","h_SingleIsoEG_byThreshold",63,0.0,63.);
-	h_DoubleEG_byThreshold    = new TH1F("h_DoubleEG_byThreshold","h_DoubleEG_byThreshold",63,0.0,63.);
-
-//Muons
-	h_SingleMu_byThreshold = new TH1F("h_SingleMu_byThreshold","h_SingleMu_byThreshold",140,0.0,140.);
-	h_DoubleMu_byThreshold = new TH1F("h_DoubleMu_byThreshold","h_DoubleMu_byThreshold",140,0.0,140.);
-
-//%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-*/
-
-//%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-//HFW  Take Care with bin edge effects in a better way.
+// Make sure we get the errors correct on histograms   
+	TH1::SetDefaultSumw2();
 
 //Cross
 	h_SingleMu_ETM_byThreshold  = new TH1F("h_SingleMu_ETM_byThreshold","h_SingleMu_ETM_byThreshold",141,-0.5,140.5);
@@ -4899,7 +3920,7 @@ void RunL1_HFW(Bool_t calcThreshold=false,Bool_t useL1Extra=true, Int_t pMenu201
 	h_SingleJet_byThreshold       = new TH1F("h_SingleJet_byThreshold","h_SingleJet_byThreshold",101,-2.,402.);
    h_DoubleJet_byThreshold       = new TH1F("h_DoubleJet_byThreshold","h_DoubleJet_byThreshold",101,-2.,402.);
 	h2_DoubleJet_byThreshold      = new TH2F("h2_DoubleJet_byThreshold","h2_DoubleJet_byThreshold",51,-2.,202.,51,-2.,202.);
-	h_QuadJetCentral_byThreshold  = new TH1F("h_QuadJetCentral_byThreshold","h_QuadJetCentral_byThreshold",101,-2.,402.);
+	h_QuadJetC_byThreshold        = new TH1F("h_QuadJetC_byThreshold","h_QuadJetC_byThreshold",101,-2.,402.);
 	h2A_QuadJetCentral_byThreshold= new TH2F("h2A_QuadJetCentral_byThreshold","h2A_QuadJetCentral_byThreshold (1,3)",51,-2.,202.,51,-2.,202.);
 	h2B_QuadJetCentral_byThreshold= new TH2F("h2B_QuadJetCentral_byThreshold","h2B_QuadJetCentral_byThreshold (2,2)",51,-2.,202.,51,-2.,202.);
 	h_SingleCJet_ETM_byThreshold  = new TH1F("h_SingleCJet_ETM_byThreshold","h_SingleCJet_ETM_byThreshold",101,-2.,402.);
@@ -4985,30 +4006,42 @@ void RunL1_HFW(Bool_t calcThreshold=false,Bool_t useL1Extra=true, Int_t pMenu201
 
 // Time to dump the configuration 
    std::cout << std::endl;
-   std::cout << " =======================================================================" << std::endl;
-   std::cout << "  L1 menu                       = " << Menu2015 << std::endl; 
-	std::cout << "  L1 menu thresholds used       = " << usedL1MenuThr << std::endl;
-	std::cout << "  Target Luminosity             = " << targetlumi << std::endl;
-	std::cout << "  Using: Data Set               = " << whichDataSetToUse << std::endl;
-	std::cout << "  NumberOfUserdLumiSections     = " << NumberOfUserdLumiSections << std::endl;
-	std::cout << "  LumiForThisSetOfLumiSections  = " << LumiForThisSetOfLumiSections << std::endl;
-	std::cout << "  L1NtupleFileName              = " << L1NtupleFileName << std::endl;
+   std::cout << " ==============  Running L1Menu2015 with Parameters  ===================" << std::endl;
+   std::cout << "  L1 menu                       = " << L1MenuFileName.Data() << std::endl; 
+	std::cout << "  L1NtupleFileName              = " << theL1NtupleFileName << std::endl;	
 	std::cout << "  LS File Name                  = " << lsFileName.Data() << std::endl;
-	std::cout << "  AveragePU                     = " << AveragePU << std::endl;
+	std::cout << "  Zero Bias Prescales           = " << theZeroBiasPrescale << std::endl;		
+	std::cout << "  NumberOfUserdLumiSections     = " << theNumberOfUserdLumiSections << std::endl;
+	std::cout << "  LumiForThisSetOfLumiSections  = " << theLumiForThisSetOfLumiSections << std::endl;
+	std::cout << "  Target Luminosity             = " << theTargetLumi << std::endl;	
+	std::cout << "  job Tag                       = " << jobTag.Data() << std::endl;	
+	std::cout << "  Number of Events to Process   = " << procNevts << std::endl;	
+   std::cout << "  Calculate Threshold Plots     = " << makeThresholdPlots  << std::endl;
 	std::cout << "  Use L1Extra Quantities        = " << useL1Extra << std::endl;
-   std::cout << "  Calculate Threshold Plots     = " << calcThreshold  << std::endl;
    std::cout << " =======================================================================" << std::endl;
    std::cout << std::endl;
 
 //  Do the heavy lifting
-	L1Menu2015 a(usedL1MenuThr,targetlumi,NumberOfUserdLumiSections,LumiForThisSetOfLumiSections,
-			L1NtupleFileName,AveragePU,ZeroBiasPrescale,L1JetCorrection);
-	a.Open(L1NtupleFileName);
-	a.Loop(calcThreshold,useL1Extra,lsFileName,procNevts);
+//	L1Menu2015 a(usedL1MenuThr,targetlumi,NumberOfUserLumiSections,LumiForThisSetOfLumiSections,
+//			       (std::string)L1NtupleFileName,AveragePU,ZeroBiasPrescale,L1JetCorrection);
+//	a.Open((std::string)L1NtupleFileName);
+//	a.Loop(makeThresholdPlots,useL1Extra,lsFileName,L1MenuFileName,procNevts);
 
+//  Do the heavy lifting
+
+//	Open(theL1NtupleFileName);
+	Loop(makeThresholdPlots,useL1Extra,lsFileName,L1MenuFileName,procNevts);
+
+
+// Output File for saving rates
+   TString outRatesFileName = "L1Rates_"; outRatesFileName +=  jobTag; outRatesFileName += ".txt";
+   FILE *outRates = fopen(outRatesFileName,"w");
 
 // Table header	
-	printf("L1Bit      L1SeedName   pre-sc     rate (kHz)        cumulative (kHz)        pure (kHz)  \n");
+   printf(          "=========================== L1Menu2015:  Rate Measures for L1 Menu ============================\n");
+	printf(          "L1Bit      L1SeedName   pre-sc     rate (kHz)        cumulative (kHz)        pure (kHz)  \n");
+   fprintf(outRates,"=========================== L1Menu2015:  Rate Measures for L1 Menu ============================\n");
+	fprintf(outRates,"L1Bit      L1SeedName   pre-sc     rate (kHz)        cumulative (kHz)        pure (kHz)  \n");
 		
 	Float_t totalrate     = 0.;
 	Float_t totalrate_err = 0.;	
@@ -5030,9 +4063,9 @@ void RunL1_HFW(Bool_t calcThreshold=false,Bool_t useL1Extra=true, Int_t pMenu201
 		Float_t err_pure_rate = h_Pure -> GetBinError(k);
 
 		std::string L1namest = (std::string)name;
-		std::map<std::string, int>::const_iterator it = a.Prescales.find(L1namest);
+		std::map<std::string, int>::const_iterator it = Prescales.find(L1namest);  //blw a.
 		Float_t pre;
-		if (it == a.Prescales.end() ) {
+		if (it == Prescales.end() ) {  //blw a.
 			std::cout << " --- SET P = 1 FOR SEED :  " << L1namest << std::endl;
 			pre = 1;
 		}
@@ -5043,15 +4076,31 @@ void RunL1_HFW(Bool_t calcThreshold=false,Bool_t useL1Extra=true, Int_t pMenu201
       totalrate += rate;
 		totalrate_err += err_rate*err_rate;
 		
-//print the results
-      printf("%2i %20s   %2i %8.2f  +/- %5.2f  %8.2f  +/- %5.2f  %8.2f  +/- %5.2f \n",a.L1BitNumber(L1namest),name.Data(),(int)pre,rate,err_rate,cumm_rate,err_cumm_rate,pure_rate,err_pure_rate);				
+//print the results  //blw a.
+      printf("%2i %20s   %2i %8.2f  +/- %5.2f  %8.2f  +/- %5.2f  %8.2f  +/- %5.2f \n",L1BitNumber(L1namest),name.Data(),(int)pre,rate,err_rate,cumm_rate,err_cumm_rate,pure_rate,err_pure_rate);				
+      fprintf(outRates,"%2i %20s   %2i %8.2f  +/- %5.2f  %8.2f  +/- %5.2f  %8.2f  +/- %5.2f \n",L1BitNumber(L1namest),name.Data(),(int)pre,rate,err_rate,cumm_rate,err_cumm_rate,pure_rate,err_pure_rate);				
 		
 	}
-
-   printf("\n Total L1 Rate (with overlaps)    = %8.2f +/- %5.2f  kHz\n",finalL1Rate, finalL1Rate_err); 
+   printf("-----------------------------------------------------------------------------------------------\n");
+   printf(  " Total L1 Rate (with overlaps)    = %8.2f +/- %5.2f  kHz\n",finalL1Rate, finalL1Rate_err); 
 	printf(  " Total L1 Rate (without overlaps) = %8.2f +/- %5.2f  kHz\n",totalrate,sqrt(totalrate_err));
-	printf(  " Total L1 Rate (pure triggers)    = %8.2f +/- %5.2f  kHz\n",pureL1Rate, pureL1Rate_err);
-		
+	printf(  " Total L1 Rate (pure triggers)    = %8.2f +/- %5.2f  kHz\n",pureL1Rate, pureL1Rate_err);	
+	printf("===============================================================================================\n");
+
+   fprintf(outRates,"-----------------------------------------------------------------------------------------------\n");
+   fprintf(outRates,  " Total L1 Rate (with overlaps)    = %8.2f +/- %5.2f  kHz\n",finalL1Rate, finalL1Rate_err); 
+	fprintf(outRates,  " Total L1 Rate (without overlaps) = %8.2f +/- %5.2f  kHz\n",totalrate,sqrt(totalrate_err));
+	fprintf(outRates,  " Total L1 Rate (pure triggers)    = %8.2f +/- %5.2f  kHz\n",pureL1Rate, pureL1Rate_err);	
+	fprintf(outRates,"===============================================================================================\n");
+
+	
+	fclose(outRates);	
 	outHist->Write();
 	outHist->Close();
+
+	
+	return finalL1Rate;
 }
+					 
+
+
